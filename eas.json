@@ -1,0 +1,50 @@
+{
+  "cli": {
+    "version": ">= 16.31.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "STAGE": "dev",
+        "API_URL": "http://192.168.43.172:3000/api/v1/mobile",
+        "API_URL_IOS": "http://192.168.43.172:3000/api/v1/mobile",
+        "API_URL_ANDROID": "http://192.168.43.172:3000/api/v1/mobile"
+      }
+    },
+    "preview": {
+      "environment": "preview",
+      "distribution": "internal",
+      "env": {
+        "STAGE": "dev",
+        "API_URL": "http://192.168.43.172:3000/api/v1/mobile",
+        "API_URL_IOS": "http://192.168.43.172:3000/api/v1/mobile",
+        "API_URL_ANDROID": "http://192.168.43.172:3000/api/v1/mobile"
+      }
+    },
+    "production": {
+      "environment": "production",
+      "autoIncrement": true,
+      "env": {
+        "STAGE": "production",
+        "API_URL": "http://192.168.43.172:3000/api/v1/mobile",
+        "API_URL_IOS": "http://192.168.43.172:3000/api/v1/mobile",
+        "API_URL_ANDROID": "http://192.168.43.172:3000/api/v1/mobile"
+      }
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "environment": "development"
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

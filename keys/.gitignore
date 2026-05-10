@@ -1,0 +1,4 @@
+# Ignorar todo el contenido sensible de esta carpeta (p. ej. google-services.json).
+# Mantener solo este .gitignore versionado.
+*
+!.gitignore

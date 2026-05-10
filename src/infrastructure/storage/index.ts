@@ -1,0 +1,1 @@
+export { secureStorageAdapter } from './secureStorage';

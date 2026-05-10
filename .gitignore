@@ -1,0 +1,29 @@
+# Expo / React Native (lo común: ver .gitignore en la raíz de Git/)
+
+# Credenciales locales (google-services.json y similares viven en keys/, ver keys/.gitignore)
+.env
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Carpetas nativas generadas
+/ios
+/android
+
+app-example
+node_modules
