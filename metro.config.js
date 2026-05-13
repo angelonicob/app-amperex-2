@@ -2,6 +2,12 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// react-native-svg (via "react-native" entry → src/) imports Node's `buffer`; RN needs the npm polyfill.
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  buffer: require.resolve('buffer'),
+};
+
 config.transformer.babelTransformerPath = require.resolve(
   'react-native-svg-transformer',
 );

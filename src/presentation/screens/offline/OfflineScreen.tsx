@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../../../modules/auth/store/userAuthStore';
-import { API_URL } from '../../../infrastructure/http/Api';
 
 export const OfflineScreen = () => {
   const insets = useSafeAreaInsets();
@@ -39,27 +38,29 @@ export const OfflineScreen = () => {
   }, [retryApiBootstrap]);
 
   return (
-    <Layout style={[styles.root, { paddingTop: insets.top + 24 }]}>
-      <Text category="h5" style={styles.title}>
-        Sin conexión al servidor
-      </Text>
-      <Text category="s1" appearance="hint" style={styles.body}>
-        {netDown
-          ? 'No hay conexión a internet o es inestable. Comprueba tu red e inténtalo de nuevo.'
-          : 'La app no puede comunicarse con el servidor de Amperex. Comprueba que el backend esté en marcha y que la URL en la configuración (por ejemplo en .env) coincida con donde corre la API.'}
-      </Text>
-      {__DEV__ ? (
-        <Text category="c1" appearance="hint" style={styles.mono}>
-          API_URL actual: {API_URL}
+    <Layout
+      style={[
+        styles.root,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
+      <View style={styles.centered}>
+        <Text category="h5" style={styles.title}>
+          {netDown ? 'Sin conexión a internet' : 'No pudimos continuar'}
         </Text>
-      ) : null}
-      <View style={styles.actions}>
-        <Button onPress={handleRetry} disabled={retrying}>
-          {retrying ? 'Comprobando…' : 'Reintentar'}
-        </Button>
-        <Button appearance="ghost" status="basic" onPress={logout}>
-          Cerrar sesión
-        </Button>
+        <Text category="s1" appearance="hint" style={styles.body}>
+          {netDown
+            ? 'Parece que no hay internet o la señal es débil. Lo sentimos por las molestias. Comprueba tu red e inténtalo cuando puedas.'
+            : 'Lo sentimos, ahora mismo no podemos cargar tu cuenta. Suele ser algo puntual: inténtalo de nuevo en unos minutos.'}
+        </Text>
+        <View style={styles.actions}>
+          <Button onPress={handleRetry} disabled={retrying}>
+            {retrying ? 'Comprobando…' : 'Reintentar'}
+          </Button>
+          <Button appearance="ghost" status="basic" onPress={logout}>
+            Cerrar sesión
+          </Button>
+        </View>
       </View>
     </Layout>
   );
@@ -67,8 +68,12 @@ export const OfflineScreen = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
-  title: { marginBottom: 12 },
-  body: { marginBottom: 16, lineHeight: 22 },
-  mono: { marginBottom: 24, fontSize: 11 },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'stretch',
+  },
+  title: { marginBottom: 12, textAlign: 'center' },
+  body: { marginBottom: 16, lineHeight: 22, textAlign: 'center' },
   actions: { gap: 12, marginTop: 8 },
 });

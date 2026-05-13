@@ -362,8 +362,7 @@ export const AuthScreen = () => {
                     appearance="hint"
                     style={styles.formSubtitle}
                   >
-                    Te enviaremos un enlace para restablecer tu contraseña (se
-                    abre en el navegador).
+                    Te enviaremos un enlace para restablecer tu contraseña.
                   </Text>
                   <LabelWarning message={warningMessage ?? ''} />
                   <FormInput

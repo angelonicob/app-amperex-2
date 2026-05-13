@@ -42,6 +42,11 @@
       ]
     },
     "plugins": [
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-web-browser",
       [
         "expo-notifications",
         {
@@ -61,8 +66,7 @@
             "backgroundColor": "#000000"
           }
         }
-      ],
-      "@react-native-community/datetimepicker"
+      ]
     ],
     "experiments": {
       "reactCompiler": true

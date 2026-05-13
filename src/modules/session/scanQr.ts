@@ -68,9 +68,9 @@ export function formatScanQrFailure(
 
   if (status == null) {
     return {
-      title: 'Sin conexión',
+      title: 'No pudimos continuar',
       message:
-        'No pudimos contactar al servidor. Comprueba tu conexión a internet e inténtalo de nuevo.',
+        'Lo sentimos, no pudimos completar la acción. Comprueba tu conexión a internet e inténtalo de nuevo.',
     };
   }
 
@@ -124,10 +124,10 @@ export function formatScanQrFailure(
   }
 
   return {
-    title: 'Error del servidor',
+    title: 'Algo salió mal',
     message:
       serverMsg ??
-      'Ocurrió un error en el servidor. Inténtalo de nuevo en unos momentos.',
+      'Lo sentimos, hubo un inconveniente. Inténtalo de nuevo en unos minutos.',
   };
 }
 

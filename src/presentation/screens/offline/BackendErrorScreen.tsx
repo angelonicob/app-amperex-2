@@ -3,7 +3,6 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../../modules/auth/store/userAuthStore';
-import { API_URL } from '../../../infrastructure/http/Api';
 
 export const BackendErrorScreen = () => {
   const insets = useSafeAreaInsets();
@@ -20,27 +19,28 @@ export const BackendErrorScreen = () => {
   }, [retryApiBootstrap]);
 
   return (
-    <Layout style={[styles.root, { paddingTop: insets.top + 24 }]}>
-      <Text category="h5" style={styles.title}>
-        Error del servidor
-      </Text>
-      <Text category="s1" appearance="hint" style={styles.body}>
-        El servidor respondió con un error. Suele ser temporal. Inténtalo de
-        nuevo en unos momentos. Si el problema continúa, puede deberse a un
-        fallo en el backend, no a tu conexión.
-      </Text>
-      {__DEV__ ? (
-        <Text category="c1" appearance="hint" style={styles.mono}>
-          API_URL actual: {API_URL}
+    <Layout
+      style={[
+        styles.root,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
+      <View style={styles.centered}>
+        <Text category="h5" style={styles.title}>
+          Algo salió mal
         </Text>
-      ) : null}
-      <View style={styles.actions}>
-        <Button onPress={handleRetry} disabled={retrying}>
-          {retrying ? 'Comprobando…' : 'Reintentar'}
-        </Button>
-        <Button appearance="ghost" status="basic" onPress={logout}>
-          Cerrar sesión
-        </Button>
+        <Text category="s1" appearance="hint" style={styles.body}>
+          Lo sentimos, no pudimos completar lo que pediste. Suele ser algo
+          puntual: vuelve a intentarlo en unos minutos. Gracias por tu paciencia.
+        </Text>
+        <View style={styles.actions}>
+          <Button onPress={handleRetry} disabled={retrying}>
+            {retrying ? 'Comprobando…' : 'Reintentar'}
+          </Button>
+          <Button appearance="ghost" status="basic" onPress={logout}>
+            Cerrar sesión
+          </Button>
+        </View>
       </View>
     </Layout>
   );
@@ -48,8 +48,12 @@ export const BackendErrorScreen = () => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
-  title: { marginBottom: 12 },
-  body: { marginBottom: 16, lineHeight: 22 },
-  mono: { marginBottom: 24, fontSize: 11 },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'stretch',
+  },
+  title: { marginBottom: 12, textAlign: 'center' },
+  body: { marginBottom: 16, lineHeight: 22, textAlign: 'center' },
   actions: { gap: 12, marginTop: 8 },
 });
