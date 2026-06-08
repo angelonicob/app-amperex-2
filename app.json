@@ -48,6 +48,12 @@
       "expo-secure-store",
       "expo-web-browser",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Usar Face ID para autorizar pagos con tu tarjeta inscrita."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/icon_rounded.png",

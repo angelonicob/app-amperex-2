@@ -10,19 +10,16 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
   ViewProps,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  BORDER_COLOR,
-  BORDER_WIDTH,
-  DISABLED_OPACITY,
-  LABEL_COLOR,
-  PLACEHOLDER_COLOR,
-} from '../../../constants/formConstants';
+import { useTheme } from '@ui-kitten/components';
+import { DISABLED_OPACITY } from '../../../constants/formConstants';
 import { formatFormLabel } from './formatFormLabel';
+import { formFieldStyles, useFormFieldTheme } from './formFieldStyles';
 
 export interface FormSelectIndexPath {
   row: number;
@@ -58,11 +55,15 @@ export const FormSelect = ({
   selectStyle,
   onSelectCallback,
 }: FormSelectProps) => {
+  const fieldTheme = useFormFieldTheme();
   const [open, setOpen] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [search, setSearch] = useState('');
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const { height: windowHeight } = useWindowDimensions();
+  const hiddenOffset = windowHeight + 100;
+  const sheetTranslateY = useRef(new Animated.Value(hiddenOffset)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
   const filteredOptions = useMemo(() => {
@@ -84,8 +85,7 @@ export const FormSelect = ({
 
   useEffect(() => {
     if (!modalVisible) return;
-    // Ensure we start hidden (off-screen) before animating in
-    sheetTranslateY.setValue(1000);
+    sheetTranslateY.setValue(hiddenOffset);
     backdropOpacity.setValue(0);
     Animated.parallel([
       Animated.timing(sheetTranslateY, {
@@ -99,7 +99,7 @@ export const FormSelect = ({
         useNativeDriver: true,
       }),
     ]).start();
-  }, [modalVisible, sheetTranslateY, backdropOpacity]);
+  }, [modalVisible, sheetTranslateY, backdropOpacity, hiddenOffset]);
 
   useEffect(() => {
     if (!modalVisible) return;
@@ -107,7 +107,7 @@ export const FormSelect = ({
 
     Animated.parallel([
       Animated.timing(sheetTranslateY, {
-        toValue: 1000,
+        toValue: hiddenOffset,
         duration: 230,
         useNativeDriver: true,
       }),
@@ -121,7 +121,7 @@ export const FormSelect = ({
       setModalVisible(false);
       setSearch('');
     });
-  }, [open, modalVisible, sheetTranslateY, backdropOpacity]);
+  }, [open, modalVisible, sheetTranslateY, backdropOpacity, hiddenOffset]);
 
   const handleSelect = useCallback(
     (row: number) => {
@@ -144,19 +144,35 @@ export const FormSelect = ({
         disabled={disabled}
         style={[
           styles.trigger,
+          fieldTheme.container,
+          !disabled && fieldTheme.containerActive,
           selectStyle,
           disabled && styles.triggerDisabled,
         ]}
       >
         <View style={styles.triggerContent}>
           <View style={styles.labelRow}>
-            <Text style={[styles.label, disabled && styles.labelDisabled]} numberOfLines={1}>
+            <Text
+              style={[
+                formFieldStyles.label,
+                disabled ? fieldTheme.labelInactive : fieldTheme.labelActive,
+              ]}
+              numberOfLines={1}
+            >
               {formatFormLabel(label)}
             </Text>
           </View>
           <View style={styles.valueRow}>
             <Text
-              style={[styles.value, isPlaceholder && styles.placeholder]}
+              style={[
+                styles.value,
+                fieldTheme.input,
+                isPlaceholder && {
+                  color: disabled
+                    ? fieldTheme.placeholderInactiveColor
+                    : fieldTheme.placeholderActiveColor,
+                },
+              ]}
               numberOfLines={1}
             >
               {displayValue}
@@ -164,7 +180,9 @@ export const FormSelect = ({
             <Ionicons
               name={open ? 'chevron-up' : 'chevron-down'}
               size={20}
-              color={disabled ? LABEL_COLOR : PLACEHOLDER_COLOR}
+              color={
+                disabled ? fieldTheme.placeholderInactiveColor : fieldTheme.iconColor
+              }
               style={styles.chevron}
             />
           </View>
@@ -174,7 +192,8 @@ export const FormSelect = ({
       <Modal
         visible={modalVisible}
         transparent
-        animationType="fade"
+        animationType="none"
+        statusBarTranslucent
         onRequestClose={handleClose}
       >
         <Animated.View style={[styles.modalBackdrop, { opacity: backdropOpacity }]}>
@@ -185,14 +204,20 @@ export const FormSelect = ({
           >
           <KeyboardAvoidingView
             style={styles.keyboardAvoid}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={0}
           >
-            <Animated.View style={{ transform: [{ translateY: sheetTranslateY }] }}>
+            <Animated.View
+              style={[
+                styles.sheetAnimated,
+                { transform: [{ translateY: sheetTranslateY }] },
+              ]}
+            >
               <Pressable
                 style={[
                   styles.modalContent,
                   {
+                    backgroundColor: theme['background-basic-color-1'],
                     paddingTop: Math.max(12, insets.top + 12),
                     paddingBottom: Math.max(12, insets.bottom + 12),
                   },
@@ -200,19 +225,25 @@ export const FormSelect = ({
                 onPress={(e) => e.stopPropagation()}
               >
               <View style={styles.sheetHeader}>
-                <Text style={styles.sheetLabel}>{formatFormLabel(label)}</Text>
+                <Text style={[styles.sheetLabel, { color: theme['text-basic-color'] }]}>
+                  {formatFormLabel(label)}
+                </Text>
                 <TouchableOpacity
                   onPress={handleClose}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   style={styles.closeButton}
                 >
-                  <Ionicons name="close" size={22} color={LABEL_COLOR} />
+                  <Ionicons name="close" size={22} color={fieldTheme.iconColor} />
                 </TouchableOpacity>
               </View>
               <TextInput
-                style={styles.searchInput}
+                style={[
+                  styles.searchInput,
+                  fieldTheme.container,
+                  fieldTheme.input,
+                ]}
                 placeholder="Buscar..."
-                placeholderTextColor={PLACEHOLDER_COLOR}
+                placeholderTextColor={fieldTheme.placeholderColor}
                 value={search}
                 onChangeText={setSearch}
                 autoCapitalize="none"
@@ -226,7 +257,9 @@ export const FormSelect = ({
               >
                 {filteredOptions.length === 0 ? (
                   <View style={styles.empty}>
-                    <Text style={styles.emptyText}>Sin resultados</Text>
+                    <Text style={[styles.emptyText, { color: fieldTheme.placeholderColor }]}>
+                      Sin resultados
+                    </Text>
                   </View>
                 ) : (
                   filteredOptions.map((item) => {
@@ -236,15 +269,31 @@ export const FormSelect = ({
                     return (
                       <TouchableOpacity
                         key={`${optionIndex}-${item}`}
-                        style={[styles.option, isSelected && styles.optionSelected]}
+                        style={[
+                          styles.option,
+                          { borderBottomColor: fieldTheme.dividerColor },
+                          isSelected && {
+                            backgroundColor: theme['color-basic-transparent-200'],
+                          },
+                        ]}
                         onPress={() => handleSelect(optionIndex)}
                         activeOpacity={0.7}
                       >
-                        <Text style={styles.optionText} numberOfLines={1}>
+                        <Text
+                          style={[
+                            styles.optionText,
+                            { color: theme['text-basic-color'] },
+                          ]}
+                          numberOfLines={1}
+                        >
                           {item}
                         </Text>
                         {isSelected && (
-                          <Ionicons name="checkmark" size={18} color={BORDER_COLOR} />
+                          <Ionicons
+                            name="checkmark"
+                            size={18}
+                            color={fieldTheme.primaryColor}
+                          />
                         )}
                       </TouchableOpacity>
                     );
@@ -266,13 +315,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   trigger: {
-    borderWidth: BORDER_WIDTH,
-    borderColor: BORDER_COLOR,
-    borderRadius: 10,
+    ...formFieldStyles.container,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    minHeight: 52,
-    justifyContent: 'center',
   },
   triggerDisabled: {
     opacity: DISABLED_OPACITY,
@@ -281,14 +326,6 @@ const styles = StyleSheet.create({
   labelRow: {
     marginBottom: 1,
   },
-  label: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: LABEL_COLOR,
-  },
-  labelDisabled: {
-    color: LABEL_COLOR,
-  },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -296,11 +333,7 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: 16,
-    color: '#111827',
     flex: 1,
-  },
-  placeholder: {
-    color: PLACEHOLDER_COLOR,
   },
   chevron: {
     marginLeft: 8,
@@ -316,12 +349,12 @@ const styles = StyleSheet.create({
   },
   keyboardAvoid: {
     flex: 1,
-    justifyContent: 'flex-end',
+  },
+  sheetAnimated: {
+    flex: 1,
   },
   modalContent: {
-    backgroundColor: '#fff',
-    maxHeight: '100%',
-    height: '100%',
+    flex: 1,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
   },
@@ -336,21 +369,18 @@ const styles = StyleSheet.create({
   sheetLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: LABEL_COLOR,
   },
   closeButton: {
     padding: 4,
   },
   searchInput: {
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
     borderRadius: 8,
     marginHorizontal: 16,
     marginBottom: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    color: '#111827',
   },
   listScroll: {
     flex: 1,
@@ -365,14 +395,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: BORDER_COLOR,
-  },
-  optionSelected: {
-    backgroundColor: 'rgba(209, 213, 219, 0.25)',
   },
   optionText: {
     fontSize: 16,
-    color: '#111827',
     flex: 1,
   },
   empty: {
@@ -381,6 +406,5 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: PLACEHOLDER_COLOR,
   },
 });

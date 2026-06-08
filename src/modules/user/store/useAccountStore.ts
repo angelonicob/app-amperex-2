@@ -1,37 +1,26 @@
 import { create } from 'zustand';
 import {
-  addReservation,
   addVehicle,
   assignVehicle,
   fetchVehicles,
   removeVehicleFromUser,
 } from '../account';
 import { Car, CarCreate } from '../types/car';
-import { Reservation } from '../types/reservation';
 import { BrandResponse } from '../../vehicles/vehicle.responses';
-import { ReservationCreateResponse } from '../account.responses';
 
 export interface AccountState {
   vehicles: Car[];
   availableVehicles: BrandResponse[];
-  reservations: ReservationCreateResponse[];
 
   fetchVehicles: () => Promise<void>;
-  //fetchReservations()
-
   addVehicle: (car: CarCreate) => Promise<Car | null>;
   assignVehicle: (vehicleId: string, plate: string) => Promise<Car | null>;
   removeVehicle: (vehicleId: string) => Promise<void>;
-  addReservation: (
-    reservation: Reservation,
-  ) => Promise<ReservationCreateResponse | null>;
-  //cancelReservation()
 }
 
 export const useAccountStore = create<AccountState>()(set => ({
   vehicles: [],
   availableVehicles: [],
-  reservations: [],
 
   fetchVehicles: async () => {
     const { myVehicles, availableVehicles } = await fetchVehicles();
@@ -64,19 +53,5 @@ export const useAccountStore = create<AccountState>()(set => ({
         .getState()
         .vehicles.filter((v) => v.id !== vehicleId),
     });
-  },
-
-  addReservation: async (reservation: Reservation) => {
-    const newReservation = await addReservation(reservation);
-    if (newReservation) {
-      set({
-        reservations: [
-          ...useAccountStore.getState().reservations,
-          newReservation,
-        ],
-      });
-      return newReservation;
-    }
-    return null;
   },
 }));

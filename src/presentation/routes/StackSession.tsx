@@ -1,6 +1,7 @@
 import { createStackNavigator } from '@react-navigation/stack';
 import { SessionStackParams } from './navigationParams';
 import { PaymentScreen } from '../screens/session/PaymentScreen';
+import { SessionSummaryScreen } from '../screens/session/SessionSummaryScreen';
 import { SessionChargeScreen } from '../screens/session/SessionChargeScreen';
 import { StartSessionScreen } from '../screens/session/StartSessionScreen';
 
@@ -16,6 +17,7 @@ export const StackSession = () => {
       <Stack.Screen name="Parámetros" component={StartSessionScreen} />
       <Stack.Screen name="Sesión" component={SessionChargeScreen} />
       <Stack.Screen name="Pago" component={PaymentScreen} />
+      <Stack.Screen name="Resumen" component={SessionSummaryScreen} />
     </Stack.Navigator>
   );
 };

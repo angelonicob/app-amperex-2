@@ -3,6 +3,8 @@ import {
   startSession as startSessionApi,
   StartSessionRequest,
   StartSessionResponse,
+  type ChargingMode,
+  type StartSessionPaymentRequired,
 } from '../session';
 import { ScanQrResponse } from '../scanQr';
 // Conexión de sesión: la app usa WebSocket nativo (useSessionWebSocket), no Socket.IO
@@ -35,6 +37,12 @@ export interface ChargingData {
   estimatedEnergyKwh?: number;
   estimatedCostClp?: number;
   estimatedDurationSeconds?: number | null;
+  // Parámetros declarados por el usuario al iniciar (set localmente en StartSession).
+  // Permiten mostrarlos en SessionChargeScreen sin pedirlos al backend.
+  mode?: ChargingMode;
+  departureTime?: string; // ISO 8601
+  /** Del WS al finalizar: false en estaciones privadas (sin cobro). */
+  paymentRequired?: boolean;
 }
 
 /** Referencia opcional a una conexión (legacy). El flujo actual usa useSessionWebSocket (WebSocket nativo). */
@@ -48,12 +56,18 @@ export interface SessionState {
   isCharging: boolean;
   startSession: (
     data: StartSessionRequest,
-  ) => Promise<StartSessionResponse | null>;
+  ) => Promise<StartSessionResponse | StartSessionPaymentRequired | null>;
   clearSession: () => void;
   setScanQrResponse: (response: ScanQrResponse | null) => void;
   setSocket: (socket: SessionConnection) => void;
   setChargingData: (data: ChargingData | null) => void;
   setIsCharging: (isCharging: boolean) => void;
+}
+
+function isStartSessionResponse(
+  value: StartSessionResponse | StartSessionPaymentRequired,
+): value is StartSessionResponse {
+  return 'success' in value;
 }
 
 export const useSessionStore = create<SessionState>()(set => ({
@@ -65,7 +79,10 @@ export const useSessionStore = create<SessionState>()(set => ({
 
   startSession: async (data: StartSessionRequest) => {
     const response = await startSessionApi(data);
-    if (response) {
+    // Solo persistimos el response cuando es el éxito "clásico"; el caso
+    // paymentRequired se maneja en la pantalla (navega a Pago) y no debe
+    // ensanchar el tipo del slice `startSessionResponse`.
+    if (response && isStartSessionResponse(response)) {
       set({ startSessionResponse: response });
     }
     return response;
@@ -84,13 +101,17 @@ export const useSessionStore = create<SessionState>()(set => ({
       set({ chargingData: null });
       return;
     }
-    // Merge shallow para no perder datos (p.ej. tarifa desde estimate vs updates de WS)
-    set(state => ({
-      chargingData: {
-        ...(state.chargingData ?? {}),
-        ...data,
-      },
-    }));
+    // Merge shallow sin pisar con `undefined` (algunos WS omiten campos y borraban costo/tarifa).
+    set(state => {
+      const prev = state.chargingData ?? {};
+      const next: ChargingData = { ...prev };
+      for (const [key, value] of Object.entries(data) as [keyof ChargingData, unknown][]) {
+        if (value !== undefined) {
+          (next as Record<string, unknown>)[key as string] = value as unknown;
+        }
+      }
+      return { chargingData: next };
+    });
   },
 
   setIsCharging: (isCharging: boolean) => {

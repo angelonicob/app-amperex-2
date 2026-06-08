@@ -1,43 +1,43 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Layout, Text } from '@ui-kitten/components';
 import {
   ActivityIndicator,
   FlatList,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
+import { EmptyStateLayout } from '../../../shared/components/layout/EmptyStateLayout';
+import { buildHistoryListRows, HistoryCard } from '../../../shared/components/ui/card';
+import { SectionLabel } from '../../../shared/components/ui/SectionLabel';
 import {
   getSessionHistory,
   SessionHistoryItem,
 } from '../../../modules/session/history';
-
-const formatDateTime = (iso: string | null) => {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString();
-};
-
-const formatEnergy = (energyKwh?: string | null) => {
-  if (!energyKwh) return '-';
-  const n = Number(energyKwh);
-  if (Number.isNaN(n)) return '-';
-  return `${n.toFixed(2)} kWh`;
-};
-
-const mapStatusLabel = (status: string) => {
-  const u = status.toUpperCase();
-  if (u === 'FINISHED') return 'Completada';
-  if (u === 'FAILED') return 'Fallida';
-  return status;
-};
+import { navigateToSessionCompletion } from '../../../shared/utils/navigateToSessionCompletion';
 
 export const HistoryScreen = () => {
   const colors = useAppTheme();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<SessionHistoryItem[]>([]);
+
+  const listRows = useMemo(() => buildHistoryListRows(items), [items]);
+  const showList = !loading && items.length > 0;
+
+  const contentPadding = useMemo(
+    () => ({
+      paddingHorizontal: 16,
+      paddingTop: 0,
+      paddingBottom: Math.max(insets.bottom, 16) + 24,
+    }),
+    [insets.bottom],
+  );
+
+  const handlePaySession = useCallback((sessionId: string) => {
+    void navigateToSessionCompletion(sessionId);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,174 +64,61 @@ export const HistoryScreen = () => {
   }, []);
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={['top', 'bottom']}
-    >
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Historial de sesiones
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Sesiones completadas y fallidas recientes
-        </Text>
-      </View>
-
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="small" color={colors.primary} />
-          <Text
-            style={[styles.loadingText, { color: colors.textSecondary }]}
-          >
-            Cargando historial...
-          </Text>
-        </View>
-      ) : items.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Aún no tienes sesiones registradas.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => {
-            const stationName =
-              item.station?.name ??
-              (item.station ? 'Estación sin nombre' : 'Estación desconocida');
-            const statusLabel = mapStatusLabel(item.status);
-            return (
-              <View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: colors.backgroundSecondary,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Text style={[styles.cardTitle, { color: colors.text }]}>
-                  {stationName}
-                </Text>
-                <Text
-                  style={[styles.cardStatus, { color: colors.textSecondary }]}
-                >
-                  Estado: {statusLabel}
-                </Text>
-                <View
-                  style={[
-                    styles.row,
-                    { borderBottomColor: colors.border },
-                  ]}
-                >
-                  <Text
-                    style={[styles.label, { color: colors.textSecondary }]}
-                  >
-                    Inicio
-                  </Text>
-                  <Text style={[styles.value, { color: colors.text }]}>
-                    {formatDateTime(item.startedAt)}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.row,
-                    { borderBottomColor: colors.border },
-                  ]}
-                >
-                  <Text
-                    style={[styles.label, { color: colors.textSecondary }]}
-                  >
-                    Fin
-                  </Text>
-                  <Text style={[styles.value, { color: colors.text }]}>
-                    {formatDateTime(item.endedAt)}
-                  </Text>
-                </View>
-                <View style={styles.row}>
-                  <Text
-                    style={[styles.label, { color: colors.textSecondary }]}
-                  >
-                    Energía
-                  </Text>
-                  <Text style={[styles.value, { color: colors.text }]}>
-                    {formatEnergy(item.energyKwh)}
-                  </Text>
-                </View>
-              </View>
-            );
-          }}
-        />
-      )}
-    </SafeAreaView>
+    <Layout level="1" style={styles.flex1}>
+      <FlatList
+        style={styles.flex1}
+        data={showList ? listRows : []}
+        keyExtractor={(row) => row.id}
+        contentContainerStyle={[styles.listContent, contentPadding]}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.loadingBlock}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text category="s1" appearance="hint" style={styles.loadingText}>
+                Cargando historial...
+              </Text>
+            </View>
+          ) : (
+            <EmptyStateLayout
+              title="Sin historial"
+              subtitle="Aún no tienes sesiones registradas."
+              icon={{ name: 'clock-rotate-left', iconStyle: 'solid' }}
+            />
+          )
+        }
+        renderItem={({ item: row, index }) =>
+          row.type === 'date' ? (
+                <SectionLabel label={row.label} />
+          ) : (
+            <HistoryCard
+              item={row.item}
+              showDaySeparator={
+                index > 0 && listRows[index - 1]?.type === 'session'
+              }
+              onPayPress={handlePaySession}
+            />
+          )
+        }
+      />
+    </Layout>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  flex1: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+  listContent: {
+    flexGrow: 1,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-  },
-  centered: {
-    flex: 1,
+  loadingBlock: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingTop: 24,
+    width: '100%',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
   },
-  emptyText: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  cardStatus: {
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-  },
-  label: {
-    fontSize: 13,
-  },
-  value: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
 });
-

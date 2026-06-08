@@ -1,11 +1,11 @@
+import { useTheme } from '@ui-kitten/components';
+import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import {
-  BORDER_COLOR,
   BORDER_WIDTH,
   DISABLED_OPACITY,
-  LABEL_COLOR,
-  PLACEHOLDER_COLOR,
 } from '../../../constants/formConstants';
+import { useAppTheme } from '../../../theme/useAppTheme';
 
 /** Padding horizontal del contenedor del campo (misma caja que el `TextInput`). */
 export const FORM_FIELD_CONTAINER_PADDING_H = 10;
@@ -17,7 +17,6 @@ export const formFieldStyles = StyleSheet.create({
   },
   container: {
     borderWidth: BORDER_WIDTH,
-    borderColor: BORDER_COLOR,
     borderRadius: 10,
     paddingHorizontal: FORM_FIELD_CONTAINER_PADDING_H,
     paddingVertical: 6,
@@ -30,21 +29,51 @@ export const formFieldStyles = StyleSheet.create({
   label: {
     fontSize: 11,
     fontWeight: '600',
-    color: LABEL_COLOR,
     marginBottom: 1,
-  },
-  labelDisabled: {
-    color: LABEL_COLOR,
   },
   requiredAsterisk: {
     color: '#dc2626',
   },
   input: {
     fontSize: 16,
-    color: '#111827',
     padding: 0,
     margin: 0,
   },
 });
 
-export { PLACEHOLDER_COLOR };
+/** Colores del tema Eva para inputs, labels y bordes (claro / oscuro). */
+export function useFormFieldTheme() {
+  const theme = useTheme();
+  const colors = useAppTheme();
+
+  return useMemo(
+    () => ({
+      container: {
+        borderColor: colors.border,
+      },
+      /** Borde más visible en campos habilitados (mismo tono que iconos del select). */
+      containerActive: {
+        borderColor: colors.textSecondary,
+      },
+      label: {
+        color: colors.textSecondary,
+      },
+      labelActive: {
+        color: colors.textSecondary,
+      },
+      labelInactive: {
+        color: colors.textDisabled,
+      },
+      input: {
+        color: theme['text-basic-color'],
+      },
+      placeholderColor: colors.textSecondary,
+      placeholderActiveColor: colors.textSecondary,
+      placeholderInactiveColor: colors.textDisabled,
+      iconColor: colors.textSecondary,
+      primaryColor: theme['color-primary-500'],
+      dividerColor: colors.border,
+    }),
+    [theme, colors.border, colors.textDisabled, colors.textSecondary],
+  );
+}

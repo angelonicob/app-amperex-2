@@ -1,22 +1,21 @@
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { useAppTheme } from '../../shared/theme/useAppTheme';
+import { Layout, Text } from '@ui-kitten/components';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 export const LoadingScreen = () => {
-  const colors = useAppTheme();
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <Layout level="1" style={styles.container}>
       <View style={styles.content}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.text, { color: colors.text, marginTop: 20 }]}>
+        <ActivityIndicator size="large" />
+        <Text category="s1" style={styles.text}>
           Cargando...
         </Text>
       </View>
-    </View>
+    </Layout>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { alignItems: 'center', justifyContent: 'center' },
-  text: { fontSize: 18, fontWeight: '600' },
+  text: { marginTop: 20, textAlign: 'center' },
 });

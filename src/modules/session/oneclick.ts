@@ -37,19 +37,17 @@ export interface OneClickAuthorizeResponse {
   };
 }
 
-export interface OneClickDeleteInscriptionResponse {
-  ok: boolean;
-}
-
-export const startInscription = async (
-  email?: string,
-): Promise<OneClickStartInscriptionResponse> => {
-  const { data } = await api.post<OneClickStartInscriptionResponse>(
-    `${PAYMENTS_BASE}/inscription/start`,
-    email != null ? { email } : {},
-  );
-  return data;
-};
+export const startInscription =
+  async (): Promise<OneClickStartInscriptionResponse> => {
+    // El email lo resuelve el backend desde el usuario autenticado (#3.2):
+    // no enviamos campos para que un cliente modificado no pueda inyectar
+    // un email arbitrario y suplantar al usuario en Transbank.
+    const { data } = await api.post<OneClickStartInscriptionResponse>(
+      `${PAYMENTS_BASE}/inscription/start`,
+      {},
+    );
+    return data;
+  };
 
 export const getInscriptionStatus =
   async (): Promise<OneClickInscriptionStatusResponse> => {
@@ -70,13 +68,8 @@ export const authorizePayment = async (
   return data;
 };
 
-export const deleteInscription =
-  async (): Promise<OneClickDeleteInscriptionResponse> => {
-    const { data } = await api.delete<OneClickDeleteInscriptionResponse>(
-      `${PAYMENTS_BASE}/inscription`,
-    );
-    return data;
-  };
+// Nota: el antiguo `deleteInscription` (DELETE /inscription) se removió;
+// usar `deleteCard(cardId)` para gestionar tarjetas individualmente (#3.6).
 
 // --- Cards (multi-card management) ---
 

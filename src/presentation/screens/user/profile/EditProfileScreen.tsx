@@ -1,21 +1,27 @@
 import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { Button, Layout, Text } from '@ui-kitten/components';
 import { useEffect, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
+import type { ProfileFormStackParams } from '../../../routes/navigationParams';
 import { useUserStore } from '../../../../modules/user/store/useUserStore';
+import { ScreenBackHeader } from '../../../../shared/components/layout/ScreenBackHeader';
 import { FormInput } from '../../../../shared/components/ui/form';
+import { useInfoDialog } from '../../../../shared/hooks/useInfoDialog';
+
+type Nav = StackNavigationProp<ProfileFormStackParams, 'Editar perfil'>;
 
 export const EditProfileScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const { user, updateUser } = useUserStore();
   const [isPosting, setIsPosting] = useState(false);
   const [form, setForm] = useState({ email: '', firstName: '', lastName: '', phone: '' });
+  const { showInfo, InfoDialog } = useInfoDialog();
 
   useEffect(() => {
     if (user) {
@@ -28,10 +34,15 @@ export const EditProfileScreen = () => {
     }
   }, [user]);
 
+  const handleBack = () => navigation.goBack();
+
   if (!user) {
     return (
-      <Layout style={styles.centered}>
-        <Text category="s1">Cargando información del usuario...</Text>
+      <Layout style={styles.flex1}>
+        <ScreenBackHeader onBack={handleBack} />
+        <Layout style={styles.centered}>
+          <Text category="s1">Cargando información del usuario...</Text>
+        </Layout>
       </Layout>
     );
   }
@@ -44,21 +55,24 @@ export const EditProfileScreen = () => {
     const phoneToUpdate = form.phone !== (user.phone || '') ? form.phone : undefined;
     if (!emailToUpdate && !firstNameToUpdate && !lastNameToUpdate && !phoneToUpdate) {
       setIsPosting(false);
-      Alert.alert('Info', 'No hay cambios para guardar');
+      showInfo('Info', 'No hay cambios para guardar');
       return;
     }
     const success = await updateUser(emailToUpdate, firstNameToUpdate, lastNameToUpdate, phoneToUpdate);
     setIsPosting(false);
     if (success) {
-      Alert.alert('Éxito', 'Perfil actualizado correctamente');
-      navigation.goBack();
+      showInfo('Éxito', 'Perfil actualizado correctamente.', {
+        onAfterAccept: () => navigation.goBack(),
+      });
     } else {
-      Alert.alert('Error', 'No se pudo actualizar el perfil');
+      showInfo('Error', 'No se pudo actualizar el perfil');
     }
   };
 
   return (
-    <Layout style={styles.container}>
+    <Layout style={styles.flex1}>
+      {InfoDialog}
+      <ScreenBackHeader onBack={handleBack} />
       <KeyboardAvoidingView
         style={styles.flex1}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -70,14 +84,6 @@ export const EditProfileScreen = () => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Layout style={styles.headerBlock}>
-            <Text category="h5" style={styles.title}>
-              Editar Perfil
-            </Text>
-            <Text category="s1" appearance="hint" style={styles.subtitle}>
-              Modifica tu información personal
-            </Text>
-          </Layout>
           <FormInput
             label="Nombre"
             placeholder="Tu nombre"
@@ -127,14 +133,6 @@ export const EditProfileScreen = () => {
           >
             Guardar
           </Button>
-          <Button
-            appearance="outline"
-            onPress={() => navigation.goBack()}
-            disabled={isPosting}
-            style={styles.secondaryButton}
-          >
-            Cancelar
-          </Button>
         </GHScrollView>
       </KeyboardAvoidingView>
     </Layout>
@@ -142,18 +140,13 @@ export const EditProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   flex1: { flex: 1 },
   scroll: { marginHorizontal: 20 },
-  scrollContent: { paddingTop: 20, paddingBottom: 40 },
+  scrollContent: { paddingTop: 16, paddingBottom: 40 },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerBlock: { marginBottom: 20 },
-  title: { marginBottom: 8 },
-  subtitle: { marginBottom: 20 },
-  primaryButton: { marginBottom: 12 },
-  secondaryButton: {},
+  primaryButton: { marginTop: 8 },
 });

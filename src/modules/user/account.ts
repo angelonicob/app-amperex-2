@@ -1,6 +1,5 @@
 import { api } from '../../infrastructure/http/Api';
 import { Car, CarCreate } from './types/car';
-import { Reservation } from './types/reservation';
 import {
     BrandResponse,
     MyVehicleResponse,
@@ -8,7 +7,6 @@ import {
 } from '../vehicles/vehicle.responses';
 import {
     CarCreateResponse,
-    ReservationCreateResponse,
 } from './account.responses';
 
 const mapMyVehicleResponse = (data: MyVehicleResponse): Car => {
@@ -99,38 +97,5 @@ export const fetchVehicles = async (): Promise<{
   } catch (error) {
     console.error('Error fetching vehicles:', error);
     return { myVehicles: [], availableVehicles: [] };
-  }
-};
-
-// * Reservations
-
-/**
- * Formatea una fecha y hora en formato ISO 8601
- * @param date - Fecha base
- * @param timeString - Hora en formato "HHMM" (ej: "0900", "1800")
- * @returns String en formato ISO 8601 (ej: "2024-12-25T10:00:00Z")
- */
-export const formatDateTime = (date: Date, timeString: string): string => {
-  const hours = parseInt(timeString.substring(0, 2), 10);
-  const minutes = parseInt(timeString.substring(2, 4), 10);
-
-  const dateTime = new Date(date);
-  dateTime.setHours(hours, minutes, 0, 0);
-
-  return dateTime.toISOString();
-};
-
-export const addReservation = async (
-  reservation: Reservation,
-): Promise<ReservationCreateResponse | null> => {
-  try {
-    const { data } = await api.post<ReservationCreateResponse>(
-      'reserva',
-      reservation,
-    );
-    return data;
-  } catch (error) {
-    console.error('Error creating reservation:', error);
-    return null;
   }
 };

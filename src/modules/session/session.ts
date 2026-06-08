@@ -1,4 +1,12 @@
 import { api } from '../../infrastructure/http/Api';
+import { parsePaymentRequiredPayload } from './pendingPayment';
+
+export type StartSessionPaymentRequired = {
+  paymentRequired: true;
+  pendingSessionId: string;
+  amountClp: number;
+  message: string;
+};
 
 export interface ChargeProfile {
   maxPowerKw?: number;
@@ -6,14 +14,19 @@ export interface ChargeProfile {
   departureTime?: string; // ISO 8601 format
 }
 
-export type ChargingMode = 'TARGET' | 'FULL';
+export type ChargingMode = 'TARGET' | 'FULL' | 'AMOUNT';
 
 export interface StartSessionRequest {
   correlationId: string;
   vehicleId: string;
   mode: ChargingMode;
   initialSocPercent: number;
+  /** Modo TARGET: exactamente uno de targetSocPercent o targetEnergyKwh (mutuamente excluyentes en backend). */
   targetSocPercent?: number;
+  /** Modo TARGET por energía (kWh a entregar en la sesión). */
+  targetEnergyKwh?: number;
+  /** Modo AMOUNT: tope en CLP (el backend deriva kWh con la tarifa del conector). */
+  targetAmountClp?: number;
   chargeProfile?: ChargeProfile;
 }
 
@@ -41,6 +54,7 @@ function toOptionalFiniteNumber(value: unknown): number | undefined {
 
 function normalizeChargeProfile(
   chargeProfile: unknown,
+  mode?: ChargingMode,
 ): ChargeProfile | undefined {
   if (!chargeProfile || typeof chargeProfile !== 'object') return undefined;
   const cp = chargeProfile as Record<string, unknown>;
@@ -50,9 +64,12 @@ function normalizeChargeProfile(
   if (maxPowerKw !== undefined && maxPowerKw >= 0) {
     normalized.maxPowerKw = maxPowerKw;
   }
-  const targetEnergy = toOptionalFiniteNumber(cp.targetEnergy);
-  if (targetEnergy !== undefined && targetEnergy >= 0) {
-    normalized.targetEnergy = targetEnergy;
+  // FULL: el tope kWh lo resuelve el backend; no enviar targetEnergy en el perfil.
+  if (mode !== 'FULL') {
+    const targetEnergy = toOptionalFiniteNumber(cp.targetEnergy);
+    if (targetEnergy !== undefined && targetEnergy > 0) {
+      normalized.targetEnergy = targetEnergy;
+    }
   }
   if (typeof cp.departureTime === 'string' && cp.departureTime.trim()) {
     normalized.departureTime = cp.departureTime;
@@ -63,23 +80,38 @@ function normalizeChargeProfile(
 
 export const startSession = async (
   data: StartSessionRequest,
-): Promise<StartSessionResponse | null> => {
+): Promise<StartSessionResponse | StartSessionPaymentRequired | null> => {
   try {
     const payload: StartSessionRequest = {
       ...data,
-      chargeProfile: normalizeChargeProfile(data.chargeProfile),
+      chargeProfile: normalizeChargeProfile(data.chargeProfile, data.mode),
     };
     const { data: response } = await api.post<StartSessionResponse>(
       'session/start',
       payload,
     );
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as {
+      message?: string;
+      response?: { status?: number; data?: unknown };
+    };
     console.error('Error starting session:', {
-      message: error?.message,
-      status: error?.response?.status,
-      data: error?.response?.data,
+      message: err?.message,
+      status: err?.response?.status,
+      data: err?.response?.data,
     });
+    if (err?.response?.status === 402) {
+      const payment = parsePaymentRequiredPayload(err.response.data);
+      if (payment) {
+        return {
+          paymentRequired: true,
+          pendingSessionId: payment.pendingSessionId,
+          amountClp: payment.amountClp,
+          message: payment.message,
+        };
+      }
+    }
     return null;
   }
 };
@@ -129,6 +161,8 @@ export interface EstimateSessionRequest {
   mode: ChargingMode;
   initialSocPercent: number;
   targetSocPercent?: number;
+  targetEnergyKwh?: number;
+  targetAmountClp?: number;
 }
 
 export interface EstimateSessionResponse {
@@ -207,6 +241,39 @@ export const stopSession = async (
   return data;
 };
 
+export interface CancelSessionIntentResponse {
+  success: boolean;
+  correlationId: string;
+  sessionId?: string;
+  message: string;
+}
+
+/**
+ * Cancela un intento walk-in (QR / start) y libera el conector si la carga no llegó a iniciar.
+ */
+export const cancelSessionIntent = async (
+  correlationId: string,
+): Promise<CancelSessionIntentResponse | null> => {
+  try {
+    const { data } = await api.post<CancelSessionIntentResponse>(
+      'session/cancel-intent',
+      { correlationId },
+    );
+    return data;
+  } catch (error: unknown) {
+    const err = error as {
+      message?: string;
+      response?: { status?: number; data?: unknown };
+    };
+    console.error('Error cancelling session intent:', {
+      message: err?.message,
+      status: err?.response?.status,
+      data: err?.response?.data,
+    });
+    return null;
+  }
+};
+
 // --- Sesión activa (restauración al reabrir app) ---
 
 export interface ActiveSession {
@@ -216,6 +283,8 @@ export interface ActiveSession {
   stationId: string;
   chargePointConnectorId: string | null;
   userId: string;
+  plannedDepartureAt?: string | null;
+  agendaBlockUntil?: string | null;
   station?: { id: string; name: string };
   chargePoint?: { id: string; ocppId: string };
 }

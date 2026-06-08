@@ -2,15 +2,29 @@ import * as eva from '@eva-design/eva';
 import { ApplicationProvider, IconRegistry } from '@ui-kitten/components';
 import { NavigationContainer } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
-import { Platform, useColorScheme, StatusBar } from 'react-native';
+import { useColorScheme, StatusBar } from 'react-native';
 import { useEffect, useMemo } from 'react';
+import {
+  flushPendingDeepLinks,
+  handleIncomingDeepLink,
+} from './src/presentation/routes/deepLinks';
+import {
+  applySystemChrome,
+  getKittenScreenBackground,
+  getStatusBarStyle,
+} from './src/shared/theme/systemChrome';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 import { setupApiAuth } from './src/infrastructure/http/setupApiAuth';
 import { PermissionsProvider } from './src/modules/permissions/PermissionsProvider';
-import { navigationRef } from './src/presentation/routes/navigationRef';
+import {
+  flushPendingNavigation,
+  navigationRef,
+} from './src/presentation/routes/navigationRef';
 import { StackRoot } from './src/presentation/routes/StackRoot';
 import { AuthProvider } from './src/presentation/providers/AuthProvider';
+import { ReservationConfirmModal } from './src/shared/components/reservation/ReservationConfirmModal';
 import { useThemeStore } from './src/shared/theme/store/useThemeStore';
 import { FontAwesome6IconsPack } from './src/shared/components/icons/FontAwesome6IconsPack';
 import {
@@ -40,25 +54,49 @@ export default function App() {
   const customTheme =
     colorScheme === 'dark' ? customDarkTheme : customLightTheme;
   const theme = { ...baseTheme, ...customTheme };
-  const backgroundColor =
-    colorScheme === 'dark'
-      ? theme['color-basic-800']
-      : theme['color-basic-100'];
+  const backgroundColor = getKittenScreenBackground(theme);
+  const statusBarStyle = getStatusBarStyle(colorScheme === 'dark');
+
+  useEffect(() => {
+    applySystemChrome(backgroundColor, statusBarStyle);
+  }, [backgroundColor, statusBarStyle]);
+
+  /**
+   * Deep links globales (p. ej. `amperex://password-reset/success`).
+   * El handler decide qué pantalla abrir y hace `reset` en la pila para evitar que
+   * `LoadingGateScreen` la sobrescriba. Listeners de flujo (OneClick) siguen siendo locales.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void Linking.getInitialURL().then(url => {
+      if (cancelled || !url) return;
+      handleIncomingDeepLink(url);
+    });
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      handleIncomingDeepLink(url);
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <IconRegistry icons={FontAwesome6IconsPack} />
-      <ApplicationProvider {...eva} theme={theme}>
+      <SafeAreaProvider>
+        <IconRegistry icons={FontAwesome6IconsPack} />
+        <ApplicationProvider {...eva} theme={theme}>
         <StatusBar
-          barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
-          backgroundColor={
-            colorScheme === 'dark'
-              ? theme['color-basic-800']
-              : theme['color-basic-100']
-          }
+          barStyle={statusBarStyle}
+          backgroundColor={backgroundColor}
+          translucent={false}
         />
         <NavigationContainer
           ref={navigationRef}
+          onReady={() => {
+            flushPendingNavigation();
+            flushPendingDeepLinks();
+          }}
           theme={{
             dark: colorScheme === 'dark',
             fonts: {
@@ -70,9 +108,9 @@ export default function App() {
             colors: {
               primary: theme['color-primary-500'],
               background: backgroundColor,
-              card: theme['color-basic-100'],
-              text: theme['color-basic-800'],
-              border: theme['color-basic-200'],
+              card: backgroundColor,
+              text: theme['text-basic-color'] ?? theme['color-basic-800'],
+              border: theme['border-basic-color-3'] ?? theme['color-basic-300'],
               notification: theme['color-primary-500'],
             },
           }}
@@ -80,10 +118,12 @@ export default function App() {
           <PermissionsProvider>
             <AuthProvider>
               <StackRoot />
+              <ReservationConfirmModal />
             </AuthProvider>
           </PermissionsProvider>
         </NavigationContainer>
-      </ApplicationProvider>
+        </ApplicationProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

@@ -2,7 +2,7 @@ import {
     createDrawerNavigator,
     DrawerContentComponentProps,
 } from '@react-navigation/drawer';
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     Button,
     Drawer,
@@ -12,6 +12,8 @@ import {
     Text,
     useTheme,
 } from '@ui-kitten/components';
+import { createKittenFa6Icon, type Fa6IconStyle } from '../../shared/components/icons/createKittenFa6Icon';
+import type { ImageProps } from 'react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { replaceToRoute } from './navigationRef';
@@ -30,16 +32,41 @@ import { HistoryScreen } from '../screens/session/HistoryScreen';
 import { TarjetasScreen } from '../screens/payments/TarjetasScreen';
 import { LoadingScreen } from '../screens/LoadingScreen';
 import { useActiveSessionStore } from '../../modules/session/store/useActiveSessionStore';
+import {
+  getPendingPayments,
+  type PendingPaymentSession,
+} from '../../modules/session/pendingPayment';
+import { PendingPaymentGateModal } from '../../shared/components/ui/popup/PendingPaymentGateModal';
+import { navigateToSessionCompletion } from '../../shared/utils/navigateToSessionCompletion';
 const { Navigator, Screen } = createDrawerNavigator<DrawerHomeParams>();
 
+type DrawerMenuItem = {
+  route: keyof DrawerHomeParams;
+  title: string;
+  icon: string;
+  iconStyle?: 'solid' | 'regular' | 'brand';
+};
+
 /** Rutas que aparecen en el menú lateral (sin Perfil; el perfil se abre desde el header). */
-const DRAWER_MENU_ROUTES: (keyof DrawerHomeParams)[] = [
-  'Home',
-  'Reservas',
-  'Autos',
-  'Historial',
-  'Tarjetas',
-  'Settings',
+/** Sangría del icono y título; la barra de selección queda a ancho completo a la izquierda. */
+const DRAWER_ITEM_CONTENT_INSET = 28;
+
+function drawerItemAccessoryLeft(icon: string, iconStyle?: Fa6IconStyle) {
+  const IconComponent = createKittenFa6Icon(icon, iconStyle);
+  return (props?: Partial<ImageProps>) => (
+    <View style={styles.drawerItemIconWrap}>
+      <IconComponent {...props} />
+    </View>
+  );
+}
+
+const DRAWER_MENU_ITEMS: DrawerMenuItem[] = [
+  { route: 'Home', title: 'Inicio', icon: 'house' },
+  { route: 'Reservas', title: 'Reservas', icon: 'calendar-days' },
+  { route: 'Autos', title: 'Autos', icon: 'car' },
+  { route: 'Historial', title: 'Historial', icon: 'clock-rotate-left' },
+  { route: 'Tarjetas', title: 'Tarjetas', icon: 'credit-card' },
+  { route: 'Settings', title: 'Configuración', icon: 'gear' },
 ];
 
 const HomeContent = () => (
@@ -59,16 +86,14 @@ const DrawerContent = ({ navigation, state }: DrawerContentComponentProps) => {
   };
 
   const handleSelect = (index: IndexPath) => {
-    const route = DRAWER_MENU_ROUTES[index.row];
-    if (route) {
-      navigation.navigate(route);
+    const item = DRAWER_MENU_ITEMS[index.row];
+    if (item) {
+      navigation.navigate(item.route);
     }
   };
 
   const activeRouteName = state.routeNames[state.index];
-  const menuRow = DRAWER_MENU_ROUTES.indexOf(
-    activeRouteName as keyof DrawerHomeParams,
-  );
+  const menuRow = DRAWER_MENU_ITEMS.findIndex(item => item.route === activeRouteName);
   const drawerSelectedIndex =
     menuRow >= 0 ? new IndexPath(menuRow) : new IndexPath(0);
 
@@ -120,17 +145,20 @@ const DrawerContent = ({ navigation, state }: DrawerContentComponentProps) => {
           selectedIndex={drawerSelectedIndex}
           onSelect={handleSelect}
         >
-          <DrawerItem title="Inicio" />
-          <DrawerItem title="Reservas" />
-          <DrawerItem title="Autos" />
-          <DrawerItem title="Historial" />
-          <DrawerItem title="Tarjetas" />
-          <DrawerItem title="Configuración" />
+          {DRAWER_MENU_ITEMS.map(item => (
+            <DrawerItem
+              key={item.route}
+              style={styles.drawerItem}
+              title={item.title}
+              accessoryLeft={drawerItemAccessoryLeft(item.icon, item.iconStyle)}
+            />
+          ))}
         </Drawer>
         <Layout style={styles.logoutFooter}>
           <Button
             appearance="ghost"
             status="danger"
+            accessoryLeft={createKittenFa6Icon('right-from-bracket')}
             onPress={handleLogout}
           >
             Cerrar Sesión
@@ -175,10 +203,15 @@ const styles = StyleSheet.create({
   drawer: {
     flex: 1,
   },
+  drawerItem: {
+    paddingHorizontal: 0,
+  },
+  drawerItemIconWrap: {
+    marginLeft: DRAWER_ITEM_CONTENT_INSET,
+  },
   logoutFooter: {
-    paddingHorizontal: 8,
     paddingBottom: 12,
-    alignItems: 'stretch',
+    alignItems: 'center',
     backgroundColor: 'transparent',
   },
 });
@@ -187,9 +220,39 @@ export const DrawerHome = () => {
   const theme = useTheme();
   useSessionRestore();
   const restoreState = useActiveSessionStore(s => s.restoreState);
+  const [debtModalVisible, setDebtModalVisible] = useState(false);
+  const [oldestDebt, setOldestDebt] = useState<PendingPaymentSession | null>(null);
 
-  // Gate: evita flicker/carreras mientras se valida /mobile/session/active.
-  if (restoreState === 'loading') {
+  useEffect(() => {
+    if (restoreState !== 'done') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await getPendingPayments();
+        if (cancelled || !res.hasDebt || !res.oldest) return;
+        setOldestDebt(res.oldest);
+        setDebtModalVisible(true);
+      } catch {
+        // Sin bloquear el drawer si falla el chequeo de deuda
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restoreState]);
+
+  const handlePayDebtFromModal = useCallback(async () => {
+    if (!oldestDebt?.sessionId) return;
+    setDebtModalVisible(false);
+    try {
+      await navigateToSessionCompletion(oldestDebt.sessionId);
+    } catch {
+      setDebtModalVisible(true);
+    }
+  }, [oldestDebt?.sessionId]);
+
+  // Mientras no termine GET /session/active (o error controlado), no mostrar el drawer.
+  if (restoreState !== 'done') {
     return <LoadingScreen />;
   }
 
@@ -199,6 +262,13 @@ export const DrawerHome = () => {
   const headerTitleColor = theme['text-basic-color'];
 
   return (
+    <>
+    <PendingPaymentGateModal
+      visible={debtModalVisible}
+      oldest={oldestDebt}
+      onDismiss={() => setDebtModalVisible(false)}
+      onPayNow={() => void handlePayDebtFromModal()}
+    />
     <Navigator
       drawerContent={props => <DrawerContent {...props} />}
       screenOptions={{
@@ -219,16 +289,33 @@ export const DrawerHome = () => {
         component={HomeContent}
         options={{ headerShown: false }}
       />
-      <Screen name="Reservas" component={StackReservation} />
-      <Screen name="Autos" component={StackCar} />
-      <Screen name="Perfil" component={StackProfile} />
+      <Screen
+        name="Reservas"
+        component={StackReservation}
+        options={{ title: 'Tus Reservas' }}
+      />
+      <Screen
+        name="Autos"
+        component={StackCar}
+        options={{ title: 'Tus Vehículos' }}
+      />
+      <Screen
+        name="Perfil"
+        component={StackProfile}
+        options={{ title: 'Perfil' }}
+      />
       <Screen name="Historial" component={HistoryScreen} />
       <Screen
         name="Tarjetas"
         component={TarjetasScreen}
         options={{ title: 'Tarjetas' }}
       />
-      <Screen name="Settings" component={SettingsScreen} />
+      <Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: 'Configuración' }}
+      />
     </Navigator>
+    </>
   );
 };

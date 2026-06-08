@@ -66,6 +66,12 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
 
       if (isAuthenticated === 'authenticated') {
         if (apiStatus === 'reachable') {
+          const navState = navigation.getState();
+          const idx = navState?.index ?? 0;
+          const route = navState?.routes?.[idx];
+          if (route?.name === 'Session') {
+            return;
+          }
           navigation.dispatch(
             CommonActions.reset({
               index: 0,

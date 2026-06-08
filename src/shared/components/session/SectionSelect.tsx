@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
-import { Text } from '@ui-kitten/components';
+import { Layout, Text, useTheme } from '@ui-kitten/components';
 import { useAppTheme } from '../../theme/useAppTheme';
 
 export interface SectionSelectProps {
@@ -19,6 +19,7 @@ export const SectionSelect = ({
   renderContent,
 }: SectionSelectProps) => {
   const colors = useAppTheme();
+  const theme = useTheme();
   const [tabsWidth, setTabsWidth] = useState(0);
 
   const activeIndex = useMemo(() => {
@@ -45,11 +46,20 @@ export const SectionSelect = ({
   }, [activeIndex, tabWidth, translateX]);
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.background }]}>
+    <Layout
+      level="2"
+      style={[
+        styles.card,
+        { shadowOpacity: colors.isDark ? 0.32 : 0.08 },
+      ]}
+    >
       <View
         style={[
           styles.tabsWrap,
-          { backgroundColor: colors.backgroundSecondary, borderColor: colors.border },
+          {
+            backgroundColor: theme['background-basic-color-3'],
+            borderColor: colors.border,
+          },
         ]}
         onLayout={(e) => setTabsWidth(e.nativeEvent.layout.width)}
       >
@@ -96,7 +106,7 @@ export const SectionSelect = ({
       ) : renderContent != null ? (
         <View style={styles.content}>{renderContent(activeId)}</View>
       ) : null}
-    </View>
+    </Layout>
   );
 };
 

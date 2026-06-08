@@ -1,4 +1,7 @@
-export { FORM_FIELD_CONTAINER_PADDING_H } from './formFieldStyles';
+export {
+  FORM_FIELD_CONTAINER_PADDING_H,
+  useFormFieldTheme,
+} from './formFieldStyles';
 export {
   FormInput,
   type FormInputProps,

@@ -1,18 +1,12 @@
 import {
   StyleSheet,
   Text,
-  TextStyle,
+  type TextStyle,
   View,
   ViewProps,
 } from 'react-native';
-import {
-  BORDER_COLOR,
-  BORDER_WIDTH,
-  DISABLED_OPACITY,
-  LABEL_COLOR,
-  PLACEHOLDER_COLOR,
-} from '../../../constants/formConstants';
 import { formatFormLabel } from './formatFormLabel';
+import { formFieldStyles, useFormFieldTheme } from './formFieldStyles';
 
 export interface FormViewProps {
   label: string;
@@ -36,23 +30,30 @@ export const FormView = ({
   style,
   valueStyle,
 }: FormViewProps) => {
+  const fieldTheme = useFormFieldTheme();
   const labelText = required ? label.replace(/\s*\*$/, '') : label;
   const trimmed = value?.trim() ?? '';
   const display = trimmed !== '' ? trimmed : emptyText;
   const isEmpty = trimmed === '';
 
   return (
-    <View style={[styles.wrapper, style]}>
-      <View style={[styles.container, disabled && styles.containerDisabled]}>
-        <Text style={[styles.label, disabled && styles.labelDisabled]} numberOfLines={1}>
+    <View style={[formFieldStyles.wrapper, style]}>
+      <View
+        style={[
+          formFieldStyles.container,
+          fieldTheme.container,
+          disabled && formFieldStyles.containerDisabled,
+        ]}
+      >
+        <Text style={[formFieldStyles.label, fieldTheme.label]} numberOfLines={1}>
           {formatFormLabel(labelText)}
-          {required ? <Text style={styles.requiredAsterisk}> *</Text> : null}
+          {required ? <Text style={formFieldStyles.requiredAsterisk}> *</Text> : null}
         </Text>
         <Text
           style={[
             styles.value,
-            isEmpty && styles.valueEmpty,
-            disabled && styles.valueDisabled,
+            fieldTheme.input,
+            isEmpty && { color: fieldTheme.placeholderColor },
             valueStyle,
           ]}
         >
@@ -64,43 +65,8 @@ export const FormView = ({
 };
 
 const styles = StyleSheet.create({
-  wrapper: {
-    marginBottom: 12,
-  },
-  container: {
-    borderWidth: BORDER_WIDTH,
-    borderColor: BORDER_COLOR,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    minHeight: 52,
-    justifyContent: 'center',
-  },
-  containerDisabled: {
-    opacity: DISABLED_OPACITY,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: LABEL_COLOR,
-    marginBottom: 1,
-  },
-  labelDisabled: {
-    color: LABEL_COLOR,
-  },
-  requiredAsterisk: {
-    color: '#dc2626',
-  },
   value: {
-    fontSize: 16,
-    color: '#111827',
     padding: 0,
     margin: 0,
-  },
-  valueEmpty: {
-    color: PLACEHOLDER_COLOR,
-  },
-  valueDisabled: {
-    color: '#111827',
   },
 });

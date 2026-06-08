@@ -1,12 +1,6 @@
 import { StyleSheet, Text, TextInput, View, ViewProps } from 'react-native';
-import {
-  BORDER_COLOR,
-  BORDER_WIDTH,
-  DISABLED_OPACITY,
-  LABEL_COLOR,
-  PLACEHOLDER_COLOR,
-} from '../../../constants/formConstants';
 import { formatFormLabel } from './formatFormLabel';
+import { formFieldStyles, useFormFieldTheme } from './formFieldStyles';
 
 export interface FormTextProps {
   label: string;
@@ -37,16 +31,25 @@ export const FormText = ({
   numberOfLines = 4,
   minHeight = 80,
 }: FormTextProps) => {
+  const fieldTheme = useFormFieldTheme();
+
   return (
-    <View ref={containerRef as React.RefObject<View>} style={[styles.wrapper, style]}>
-      <View style={[styles.container, disabled && styles.containerDisabled]}>
-        <Text style={[styles.label, disabled && styles.labelDisabled]} numberOfLines={1}>
+    <View ref={containerRef as React.RefObject<View>} style={[formFieldStyles.wrapper, style]}>
+      <View
+        style={[
+          formFieldStyles.container,
+          styles.textContainer,
+          fieldTheme.container,
+          disabled && formFieldStyles.containerDisabled,
+        ]}
+      >
+        <Text style={[formFieldStyles.label, fieldTheme.label]} numberOfLines={1}>
           {formatFormLabel(label)}
         </Text>
         <TextInput
-          style={[styles.input, { minHeight }, inputStyle]}
+          style={[formFieldStyles.input, fieldTheme.input, { minHeight }, inputStyle]}
           placeholder={placeholder}
-          placeholderTextColor={PLACEHOLDER_COLOR}
+          placeholderTextColor={fieldTheme.placeholderColor}
           value={value}
           onChangeText={onChangeText}
           onFocus={onFocus}
@@ -61,33 +64,8 @@ export const FormText = ({
 };
 
 const styles = StyleSheet.create({
-  wrapper: {
-    marginBottom: 12,
-  },
-  container: {
-    borderWidth: BORDER_WIDTH,
-    borderColor: BORDER_COLOR,
-    borderRadius: 10,
+  textContainer: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    minHeight: 52,
-  },
-  containerDisabled: {
-    opacity: DISABLED_OPACITY,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: LABEL_COLOR,
-    marginBottom: 4,
-  },
-  labelDisabled: {
-    color: LABEL_COLOR,
-  },
-  input: {
-    fontSize: 16,
-    color: '#111827',
-    padding: 0,
-    margin: 0,
   },
 });

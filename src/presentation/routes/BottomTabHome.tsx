@@ -49,9 +49,7 @@ const QRIconWithCircle = (props: any) => {
         iconStyle="solid"
         style={[
           props.style,
-          {
-            tintColor: '#FFFFFF',
-          },
+          { tintColor: theme['text-control-color'] },
         ]}
       />
     </View>
@@ -111,12 +109,7 @@ const BottomTabBar = ({ navigation, state }: BottomTabBarProps) => {
           <BottomNavigationTab
             title="Menú"
             icon={props => (
-              <Icon
-                {...props}
-                name="bars"
-                pack="fontawesome6"
-                iconStyle="solid"
-              />
+              <Icon {...props} name="bars" pack="fontawesome6" iconStyle="solid" />
             )}
           />
         </BottomNavigation>

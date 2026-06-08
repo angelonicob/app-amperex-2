@@ -1,3 +1,6 @@
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import type { NavigationProp, RouteProp } from '@react-navigation/native';
+import { Layout, useTheme } from '@ui-kitten/components';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,6 +27,7 @@ import { useAppTheme } from '../../../shared/theme/useAppTheme';
 import { Disclaimer } from '../../../shared/components/permissions/Disclaimer';
 import { PermissionBlocked } from '../../../shared/components/permissions/PermissionBlocked';
 import { PermissionRequest } from '../../../shared/components/permissions/PermissionRequest';
+import type { BottomTabStackParams } from '../../routes/navigationParams';
 
 function formatNotificationDate(dateStr: string) {
   const d = new Date(dateStr);
@@ -35,9 +39,14 @@ function formatNotificationDate(dateStr: string) {
   return d.toLocaleDateString();
 }
 
+type MapRouteProp = RouteProp<BottomTabStackParams, 'Mapa'>;
+
 export const MapScreen = () => {
   const colors = useAppTheme();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const route = useRoute<MapRouteProp>();
+  const navigation = useNavigation<NavigationProp<BottomTabStackParams, 'Mapa'>>();
   const mapRef = useRef<StationsMapRef>(null);
   const searchInputRef = useRef<TextInput>(null);
 
@@ -59,6 +68,12 @@ export const MapScreen = () => {
   const markAsRead = useNotificationsStore(s => s.markAsRead);
   const removeNotification = useNotificationsStore(s => s.removeNotification);
   const clearAllNotifications = useNotificationsStore(s => s.clearAllNotifications);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadNotifications();
+    }, [loadNotifications]),
+  );
 
   useEffect(() => {
     if (isNotificationsOpen) {
@@ -104,6 +119,18 @@ export const MapScreen = () => {
     [closeSearch],
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      const stationId = route.params?.stationId;
+      if (!stationId) return;
+      const timer = setTimeout(() => {
+        mapRef.current?.selectStation(stationId);
+        navigation.setParams({ stationId: undefined });
+      }, 150);
+      return () => clearTimeout(timer);
+    }, [route.params?.stationId, navigation]),
+  );
+
   const renderNotificationItem = useCallback(
     ({ item }: { item: Notification }) => (
       <View
@@ -144,7 +171,7 @@ export const MapScreen = () => {
 
   if (locationStatus === 'not-determined') {
     return (
-      <View style={styles.container}>
+      <Layout level="1" style={styles.container}>
         <Disclaimer
           title="Ubicación para el mapa"
           message="Necesitamos tu ubicación para mostrar estaciones cercanas."
@@ -152,13 +179,13 @@ export const MapScreen = () => {
           onConfirm={() => requestLocationPermission()}
           onClose={() => refreshLocationPermission()}
         />
-      </View>
+      </Layout>
     );
   }
 
   if (locationStatus === 'requestable') {
     return (
-      <View style={styles.container}>
+      <Layout level="1" style={styles.container}>
         <PermissionRequest
           title="Ubicación necesaria"
           message="La ubicación es necesaria para usar el mapa."
@@ -167,29 +194,35 @@ export const MapScreen = () => {
           onClose={() => refreshLocationPermission()}
           buttonText="Permitir ubicación"
         />
-      </View>
+      </Layout>
     );
   }
 
   if (locationStatus === 'blocked' || locationStatus === 'unavailable') {
     return (
-      <View style={styles.container}>
+      <Layout level="1" style={styles.container}>
         <PermissionBlocked
           title="Permiso bloqueado"
           message="Has bloqueado el permiso de ubicación. Para usar esta función debes habilitarlo en configuración."
           screenName="Mapa"
           onRefresh={() => refreshLocationPermission()}
         />
-      </View>
+      </Layout>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <Layout level="1" style={styles.container}>
       <StationsMap ref={mapRef} hasLocationPermission={locationStatus === 'granted'} />
 
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
-        <Pressable style={styles.searchBar} onPress={openSearch}>
+        <Pressable
+          style={[
+            styles.searchBar,
+            { backgroundColor: theme['background-basic-color-1'] },
+          ]}
+          onPress={openSearch}
+        >
           <Icon name="magnifying-glass" size={18} color={colors.textSecondary} iconStyle="solid" />
           <Text style={[styles.searchBarPlaceholder, { color: colors.textSecondary }]}>
             Buscar estaciones
@@ -198,7 +231,10 @@ export const MapScreen = () => {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Notificaciones"
-          style={styles.notifButton}
+          style={[
+            styles.notifButton,
+            { backgroundColor: theme['background-basic-color-1'] },
+          ]}
           onPress={openNotifications}
         >
           <Icon name="bell" size={20} color={colors.textSecondary} iconStyle="solid" />
@@ -276,7 +312,7 @@ export const MapScreen = () => {
                   {item.name}
                 </Text>
                 <Text style={[styles.stationItemMeta, { color: colors.textSecondary }]}>
-                  {item.availableConnectors} de {item.totalConnectors} conectores
+                  {item.availableConnectors} conectores disponibles
                 </Text>
               </Pressable>
             )}
@@ -344,7 +380,7 @@ export const MapScreen = () => {
           </View>
         </View>
       )}
-    </View>
+    </Layout>
   );
 };
 
@@ -366,7 +402,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -379,7 +414,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,

@@ -20,14 +20,20 @@ export const fetchStationsMap = async (): Promise<Station[]> => {
       openAt: station.openAt ?? null,
       closeAt: station.closeAt ?? null,
       operativeStatus: station.operativeStatus,
+      address: station.address
+        ? { rawAddress: station.address.rawAddress ?? null }
+        : null,
       chargePoints: station.chargePoints.map(chargePoint => ({
         id: chargePoint.id,
         name: (chargePoint.name ?? '').trim() || chargePoint.ocppId,
         ocppId: chargePoint.ocppId,
+        operativeStatus: chargePoint.operativeStatus ?? 'ACTIVE',
+        connectionState: chargePoint.connectionState ?? 'ONLINE',
         connectors: chargePoint.connectors.map(connector => ({
           id: connector.id,
           connectorId: connector.connectorId,
           status: connector.status,
+          operativeStatus: connector.operativeStatus ?? 'ACTIVE',
           powerKw: connector.powerKw || null,
           price: connector.price ?? null,
           connectorType: connector.connectorType ?? null,

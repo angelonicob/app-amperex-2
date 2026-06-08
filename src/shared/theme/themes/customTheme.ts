@@ -1,4 +1,4 @@
-// Tema de colores legacy (referencia). Usar colors.ts + useAppTheme() en su lugar.
+// Tema de colores legacy  Usar colors.ts + useAppTheme() en su lugar.
 // Primary: #44B778 (verde) en toda la app, independiente del tema.
 const PRIMARY = '#44B778'; // rgb(68, 183, 120)
 
@@ -62,7 +62,7 @@ export const customLightTheme: Record<string, string> = {
   // 'color-info-700': '#0066CC', // Estados hover/active de información
 
   // COLORES DE FONDO (Background Colors)
-  // 'background-basic-color-1': '#FFFFFF', // Fondo principal de la app
+  'background-basic-color-1': '#FFFFFF', // Fondo principal de la app
   // 'background-basic-color-2': '#F7F9FC', // Fondo secundario (cards, modales)
   // 'background-basic-color-3': '#EDF1F7', // Fondo terciario (inputs, separadores)
   // 'background-basic-color-4': '#E4E9F2', // Fondo cuaternario (hover states)

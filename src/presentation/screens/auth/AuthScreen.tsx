@@ -1,4 +1,4 @@
-import { Text } from '@ui-kitten/components';
+import { Layout, Text, useTheme } from '@ui-kitten/components';
 import { Image as ExpoImage } from 'expo-image';
 import {
   useCallback,
@@ -9,7 +9,6 @@ import {
 } from 'react';
 import {
   ImageBackground,
-  InteractionManager,
   Keyboard,
   Platform,
   Pressable,
@@ -26,8 +25,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  ButtonPrimary,
   ButtonTransparent,
-  ButtonWithGradient,
 } from '../../../shared/components/ui/button';
 import { LabelWarning } from '../../../shared/components/ui/card';
 import {
@@ -44,7 +43,7 @@ const PANEL_TIMING_MS = 260;
 /** Debe coincidir con la validación del backend (p. ej. IsLength 8). */
 const MIN_PASSWORD_LENGTH = 8;
 
-/** Con el panel colapsado: fracción del alto útil (bajo status bar) que ocupa el formulario blanco. El resto es hero. */
+/** Con el panel colapsado: fracción del alto útil (bajo status bar) que ocupa el formulario. El resto es hero. */
 const COLLAPSED_FORM_VISIBLE_RATIO = 0.7;
 
 type AuthMode = 'signin' | 'register';
@@ -53,7 +52,10 @@ type ForgotStep = 'email' | 'success';
 
 const FORGOT_SLIDE_MS = 320;
 
+const AnimatedLayout = Animated.createAnimatedComponent(Layout);
+
 export const AuthScreen = () => {
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const [authMode, setAuthMode] = useState<AuthMode>('signin');
@@ -137,18 +139,47 @@ export const AuthScreen = () => {
       setPanelExpanded(true);
     });
 
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let idleCallbackId: number | undefined;
+
+    const cancelScheduledCollapse = () => {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+      const g = globalThis as typeof globalThis & {
+        cancelIdleCallback?: (id: number) => void;
+      };
+      if (idleCallbackId != null && g.cancelIdleCallback) {
+        g.cancelIdleCallback(idleCallbackId);
+        idleCallbackId = undefined;
+      }
+    };
+
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      cancelScheduledCollapse();
       const collapse = () => {
         setPanelExpanded(false);
       };
       if (Platform.OS === 'android') {
-        setTimeout(collapse, 120);
+        timeoutId = setTimeout(collapse, 120);
       } else {
-        InteractionManager.runAfterInteractions(collapse);
+        const g = globalThis as typeof globalThis & {
+          requestIdleCallback?: (
+            cb: () => void,
+            opts?: { timeout?: number },
+          ) => number;
+        };
+        if (typeof g.requestIdleCallback === 'function') {
+          idleCallbackId = g.requestIdleCallback(collapse, { timeout: 500 });
+        } else {
+          timeoutId = setTimeout(collapse, 0);
+        }
       }
     });
 
     return () => {
+      cancelScheduledCollapse();
       showSub.remove();
       hideSub.remove();
     };
@@ -320,7 +351,8 @@ export const AuthScreen = () => {
         </Animated.View>
       </View>
 
-      <Animated.View
+      <AnimatedLayout
+        level="1"
         style={[
           styles.formPanel,
           {
@@ -331,7 +363,12 @@ export const AuthScreen = () => {
         ]}
       >
         <View style={styles.sheetHandleContainer} pointerEvents="none">
-          <View style={styles.sheetHandle} />
+          <View
+            style={[
+              styles.sheetHandle,
+              { backgroundColor: theme['border-basic-color-3'] },
+            ]}
+          />
         </View>
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -378,13 +415,13 @@ export const AuthScreen = () => {
                     textContentType="emailAddress"
                     disabled={isSendingReset}
                   />
-                  <ButtonWithGradient
+                  <ButtonPrimary
                     title={
                       isSendingReset ? 'Enviando…' : 'Enviar instrucciones'
                     }
                     onPress={() => void sendPasswordResetRequest()}
                     disabled={isSendingReset}
-                    style={styles.primaryBtn}
+                    style={[styles.primaryBtn, styles.primaryBtnAboveLink]}
                   />
                   <Pressable
                     onPress={backToSignInForm}
@@ -412,7 +449,11 @@ export const AuthScreen = () => {
                   <Text category="h3" style={styles.formTitle}>
                     Correo enviado
                   </Text>
-                  <Text category="s1" style={styles.forgotSuccessBody}>
+                  <Text
+                    category="s1"
+                    appearance="hint"
+                    style={styles.forgotSuccessBody}
+                  >
                     Si el correo es válido te llegará un mensaje con un enlace
                     para restablecer tu contraseña. No olvides revisar spam.
                   </Text>
@@ -424,7 +465,7 @@ export const AuthScreen = () => {
                     onPress={resendPasswordResetEmail}
                     disabled={isSendingReset}
                   />
-                  <ButtonWithGradient
+                  <ButtonPrimary
                     title="Volver a iniciar sesión"
                     onPress={backToSignInForm}
                     disabled={isSendingReset}
@@ -528,7 +569,7 @@ export const AuthScreen = () => {
                 </>
               ) : null}
 
-              <ButtonWithGradient
+              <ButtonPrimary
                 title={primaryLabel}
                 onPress={() => void onSubmit()}
                 disabled={isPosting}
@@ -537,7 +578,7 @@ export const AuthScreen = () => {
             </>
           )}
         </ScrollView>
-      </Animated.View>
+      </AnimatedLayout>
     </ImageBackground>
   );
 };
@@ -583,7 +624,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     overflow: 'hidden',
@@ -603,7 +643,6 @@ const styles = StyleSheet.create({
     width: 132,
     height: 5,
     borderRadius: 999,
-    backgroundColor: '#D1D5DB',
   },
   formScroll: {
     paddingHorizontal: 24,
@@ -633,13 +672,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
     textAlign: 'center',
-    color: '#4b5563',
     lineHeight: 22,
   },
 
   /** Separación respecto al campo anterior; el botón ya usa `marginBottom` como `FormInput`. */
   primaryBtn: {
     marginTop: 8,
+  },
+  primaryBtnAboveLink: {
+    marginBottom: 4,
   },
   forgotPasswordWrap: {
     alignSelf: 'flex-start',
@@ -653,8 +694,8 @@ const styles = StyleSheet.create({
   },
   secondaryLinkWrap: {
     alignSelf: 'center',
-    marginTop: 16,
-    paddingVertical: 8,
+    marginTop: 4,
+    paddingVertical: 4,
   },
   secondaryLinkPressed: {
     opacity: 0.75,

@@ -7,8 +7,13 @@ import { useAccountStore } from '../../user/store/useAccountStore';
 import { useUserStore } from '../../user/store/useUserStore';
 import { useActiveSessionStore } from '../../session/store/useActiveSessionStore';
 import { initPushNotifications } from '../../notifications/push';
+import { useNotificationsStore } from '../../notifications/store/useNotificationsStore';
 import { refreshAccessToken } from '../tokenLifecycle';
-import { apiSyncFirebaseSession, apiLogout } from '../authApi';
+import {
+  apiSyncFirebaseSession,
+  apiLogout,
+  resetBackendSessionSyncThrottle,
+} from '../authApi';
 import { getFirebaseAuth } from '../../../infrastructure/firebase/firebaseAuth';
 import { ensureFirebaseAuthReady } from '../../../infrastructure/firebase/firebaseSession';
 import {
@@ -91,10 +96,17 @@ export interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>()((set, get) => {
-  const finalizeBackendSession = async (): Promise<
+  const finalizeBackendSession = async (opts?: {
+    /** Si false (login desde Auth), no pasamos a `checking` para no bloquear navegación ni duplicar el gate de carga. */
+    showChecking?: boolean;
+    /** true tras login/registro; evita omitir POST /auth/session por throttle local. */
+    forceSessionSync?: boolean;
+  }): Promise<
     'success' | 'transport' | 'server' | 'auth' | 'no_token'
   > => {
-    set({ isAuthenticated: 'checking', apiStatus: 'unknown' });
+    if (opts?.showChecking !== false) {
+      set({ isAuthenticated: 'checking', apiStatus: 'unknown' });
+    }
     // Firebase Auth: el Bearer se obtiene desde `getFirebaseIdToken()` (interceptor).
     await ensureFirebaseAuthReady();
     const accessToken = (await refreshAccessToken()) ?? undefined;
@@ -108,7 +120,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     }
 
     try {
-      await apiSyncFirebaseSession();
+      await apiSyncFirebaseSession({ force: opts?.forceSessionSync === true });
     } catch (e) {
       if (axios.isAxiosError(e)) {
         const s = e.response?.status;
@@ -120,6 +132,12 @@ export const useAuthStore = create<AuthState>()((set, get) => {
           useUserStore.getState().clearUser();
           return 'auth';
         }
+        // 429 solo aplica a POST /auth/session; el polling de sesión/QR/reservas no debe bloquear al usuario.
+        if (s === 429) {
+          if (__DEV__) {
+            console.warn('[auth] POST /auth/session rate limited; se continúa con Bearer existente');
+          }
+        }
       }
     }
 
@@ -127,13 +145,17 @@ export const useAuthStore = create<AuthState>()((set, get) => {
 
     if (me.ok) {
       useUserStore.getState().setUser(me.user);
-      await useAccountStore.getState().fetchVehicles();
-      await useStationStore.getState().fetchStations();
-      initPushNotifications().catch(() => {});
       set({
         isAuthenticated: 'authenticated',
         apiStatus: 'reachable',
       });
+      // No bloquear el login en car/me ni stations/map: si cuelgan o tardan, antes la UI quedaba en "checking" / cargando.
+      void Promise.all([
+        useAccountStore.getState().fetchVehicles(),
+        useStationStore.getState().fetchStations(),
+        useNotificationsStore.getState().loadNotifications(),
+      ]).catch(() => {});
+      initPushNotifications().catch(() => {});
       return 'success';
     }
 
@@ -191,7 +213,10 @@ export const useAuthStore = create<AuthState>()((set, get) => {
           );
         }
 
-        const outcome = await finalizeBackendSession();
+        const outcome = await finalizeBackendSession({
+          showChecking: false,
+          forceSessionSync: true,
+        });
 
         if (outcome === 'auth' || outcome === 'no_token') {
           return {
@@ -262,6 +287,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         useUserStore.getState().setUser(me.user);
         await useAccountStore.getState().fetchVehicles();
         await useStationStore.getState().fetchStations();
+        await useNotificationsStore.getState().loadNotifications();
         initPushNotifications().catch(() => {});
         set({
           isAuthenticated: 'authenticated',
@@ -290,6 +316,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     },
 
     logout() {
+      resetBackendSessionSyncThrottle();
       void (async () => {
         await apiLogout();
         try {

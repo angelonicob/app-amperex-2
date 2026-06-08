@@ -1,11 +1,13 @@
 import { createStackNavigator } from '@react-navigation/stack';
 import { RootStackParams } from './navigationParams';
 import { AuthScreen } from '../screens/auth/AuthScreen';
+import { PasswordResetSuccessScreen } from '../screens/auth/PasswordResetSuccessScreen';
 import { LoadingGateScreen } from '../screens/LoadingGateScreen';
 import { OfflineScreen } from '../screens/offline/OfflineScreen';
 import { BackendErrorScreen } from '../screens/offline/BackendErrorScreen';
 import { DrawerHome } from './DrawerHome';
 import { StackSession } from './StackSession';
+import { CreateReservationAgendaScreen } from '../screens/reservation/create/CreateReservationAgendaScreen';
 
 const Stack = createStackNavigator<RootStackParams>();
 
@@ -21,6 +23,14 @@ export const StackRoot = () => {
       <Stack.Screen name="Offline" component={OfflineScreen} />
       <Stack.Screen name="BackendError" component={BackendErrorScreen} />
       <Stack.Screen name="Session" component={StackSession} />
+      <Stack.Screen
+        name="CreateReserva"
+        component={CreateReservationAgendaScreen}
+      />
+      <Stack.Screen
+        name="PasswordResetSuccess"
+        component={PasswordResetSuccessScreen}
+      />
     </Stack.Navigator>
   );
 };

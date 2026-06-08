@@ -1,36 +1,109 @@
-import { Button, Layout, Text } from '@ui-kitten/components';
+import { Button, Layout, Text, useTheme } from '@ui-kitten/components';
 import type { AxiosError } from 'axios';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParams } from '../../routes/navigationParams';
 import { checkSessionStatus, getActiveSession, stopSession } from '../../../modules/session/session';
 import { useSessionStore } from '../../../modules/session/store/useSessionStore';
+import { usePendingPaymentStore } from '../../../modules/session/store/usePendingPaymentStore';
+import type { PaymentSummary } from '../../../modules/session/pendingPayment';
 import { useActiveSessionStore } from '../../../modules/session/store/useActiveSessionStore';
 import { useSessionWebSocket } from '../../../shared/hooks/useSessionWebSocket';
 import { ConfirmPopup } from '../../../shared/components/ui/popup/ConfirmPopup';
+import { useConfirmDialog } from '../../../shared/hooks/useConfirmDialog';
+import { useInfoDialog } from '../../../shared/hooks/useInfoDialog';
+import { navigateToSessionCompletion } from '../../../shared/utils/navigateToSessionCompletion';
 import { replaceToRoute } from '../../routes/navigationRef';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
+import { useSystemChrome } from '../../../shared/hooks/useSystemChrome';
+import { formatElapsedSince } from '../../../shared/components/ui/card/historyFormat';
 
-const SUCCESS_DOT_COLOR = '#00E096';
+function wsMetricNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value.trim().replace(',', '.'));
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+const CHARGE_MODE_LABELS: Record<string, string> = {
+  TARGET: 'Por energía (kWh)',
+  AMOUNT: 'Por monto (CLP)',
+  FULL: 'Carga completa',
+};
+
+function formatDepartureTime(iso?: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/** Costo acumulado en CLP para la UI (incluye montos &lt; 1 con decimales). */
+function formatAccumulatedCostClp(clp: number): string {
+  if (!Number.isFinite(clp) || clp < 0) return '—';
+  const int = Math.round(clp);
+  if (Math.abs(clp - int) < 1e-6) {
+    if (int === 0) return '0';
+    return int.toLocaleString('es-CL');
+  }
+  if (clp < 1) return clp.toFixed(2);
+  return clp.toLocaleString('es-CL', { maximumFractionDigits: 2 });
+}
 
 const ChargeProgressCard = ({
-  percentage,
-  power,
+  energyKwh,
+  startedAt,
+  /** 0–100: SOC del vehículo (fallback de la barra si no hay objetivo kWh). */
+  socPercent,
+  /** Si existe, la barra refleja energía entregada / objetivo estimado. */
+  targetEnergyKwh,
 }: {
-  percentage: number;
-  power: number;
+  energyKwh: number;
+  startedAt?: string | null;
+  socPercent: number;
+  targetEnergyKwh?: number | null;
 }) => {
   const colors = useAppTheme();
-  const clamped = Math.max(0, Math.min(Number.isFinite(percentage) ? percentage : 0, 100));
-  const progress = clamped / 100;
+  const theme = useTheme();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+  const energy = Number.isFinite(energyKwh) && energyKwh >= 0 ? energyKwh : 0;
+  const target =
+    typeof targetEnergyKwh === 'number' &&
+    Number.isFinite(targetEnergyKwh) &&
+    targetEnergyKwh > 0
+      ? targetEnergyKwh
+      : null;
+  const barFromEnergy = target != null ? Math.min(100, (energy / target) * 100) : null;
+  const barFromSoc = Math.max(
+    0,
+    Math.min(Number.isFinite(socPercent) ? socPercent : 0, 100),
+  );
+  const progress = (barFromEnergy != null ? barFromEnergy : barFromSoc) / 100;
 
   return (
     <Layout style={styles.progressCard} level="2">
       <View style={styles.progressTrack}>
-        <View style={styles.progressTrackBackground} />
+        <View
+          style={[
+            styles.progressTrackBackground,
+            { backgroundColor: theme['background-basic-color-3'] },
+          ]}
+        />
         <View
           style={[
             styles.progressDot,
@@ -42,16 +115,32 @@ const ChargeProgressCard = ({
         />
       </View>
       <View style={styles.progressTextRow}>
-        <Text style={styles.progressPercentage}>{clamped.toFixed(0)}%</Text>
-        <Text style={styles.progressPower}>
-          {`${Number.isFinite(power) ? Number(power).toFixed(1) : '0.0'} kW`}
-        </Text>
+        <Layout style={styles.progressMetricCol} level="2">
+          <Text category="c1" appearance="hint" style={styles.costLabel}>
+            Energía cargada
+          </Text>
+          <Text style={styles.costValue}>{energy.toFixed(2)} kWh</Text>
+        </Layout>
+        <Layout style={[styles.progressMetricCol, styles.progressMetricColRight]} level="2">
+          <Text
+            category="c1"
+            appearance="hint"
+            style={[styles.costLabel, styles.progressMetricLabelRight]}
+          >
+            Tiempo transcurrido
+          </Text>
+          <Text style={[styles.costValue, styles.progressMetricValueRight]}>
+            {formatElapsedSince(startedAt, nowMs)}
+          </Text>
+        </Layout>
       </View>
     </Layout>
   );
 };
 
 export const SessionChargeScreen = () => {
+  const colors = useAppTheme();
+  const screenBackground = useSystemChrome();
   const [currentEnergy, setCurrentEnergy] = useState<number>(0);
   const [currentPercentage, setCurrentPercentage] = useState<number>(0);
   const [currentPower, setCurrentPower] = useState<number>(0);
@@ -60,33 +149,79 @@ export const SessionChargeScreen = () => {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const { scanQrResponse, chargingData, isCharging, setChargingData, setIsCharging } =
     useSessionStore();
+  const activePersisted = useActiveSessionStore(s => s.activeSession);
+  const effectiveSessionId = chargingData?.sessionId ?? activePersisted?.id;
 
   const navigation = useNavigation<StackNavigationProp<RootStackParams>>();
-  const { isConnected: isWsConnected, lastUpdate, error: wsError } =
-    useSessionWebSocket(chargingData?.sessionId);
+  const {
+    isConnected: isWsConnected,
+    lastUpdate,
+    updateSeq,
+    error: wsError,
+    reconnect,
+  } = useSessionWebSocket(effectiveSessionId);
+
+  // Si el store de carga aún no tiene sessionId (carrera tras cold start), hidratar desde sesión activa persistida + backend.
+  useEffect(() => {
+    if (chargingData?.sessionId) return;
+    const sid = activePersisted?.id;
+    if (!sid) return;
+    const st = activePersisted.status;
+    if (st !== 'CHARGING' && st !== 'STOPPING') return;
+    setChargingData({
+      sessionId: sid,
+      status: st as 'CHARGING' | 'STOPPING',
+      startedAt: activePersisted.startedAt ?? undefined,
+    });
+    setIsCharging(true);
+  }, [
+    activePersisted,
+    chargingData?.sessionId,
+    setChargingData,
+    setIsCharging,
+  ]);
   const navigatedToPaymentRef = useRef<boolean>(false);
   const stoppingWatchdogStartedRef = useRef<boolean>(false);
+  const { showInfo, InfoDialog } = useInfoDialog();
+  const { showConfirm, ConfirmDialog } = useConfirmDialog();
 
   // Consumir session-update del WebSocket nativo /sessions y persistir en store
   useEffect(() => {
     if (!lastUpdate || lastUpdate.type !== 'session-update') return;
 
+    const updateSessionId = lastUpdate.data.sessionId?.trim();
+    if (
+      updateSessionId &&
+      effectiveSessionId &&
+      updateSessionId !== effectiveSessionId.trim()
+    ) {
+      return;
+    }
+
+    const energyKwh = wsMetricNumber(lastUpdate.data.energyKwh);
+    const powerKw = wsMetricNumber(lastUpdate.data.powerKw);
+    const currentPercentage = wsMetricNumber(lastUpdate.data.currentPercentage);
+    const currentCost = wsMetricNumber(lastUpdate.data.currentCost);
+    const pricePerKwh = wsMetricNumber(lastUpdate.data.pricePerKwh);
+
     const sessionData = {
       sessionId: lastUpdate.data.sessionId,
       status: lastUpdate.data.status as any,
       ocppTransactionId: lastUpdate.data.ocppTransactionId
-        ? parseInt(lastUpdate.data.ocppTransactionId)
+        ? parseInt(lastUpdate.data.ocppTransactionId, 10)
         : undefined,
       startedAt: lastUpdate.data.startedAt,
-      meterStart: lastUpdate.data.meterStart,
-      energyKwh: lastUpdate.data.energyKwh,
-      powerKw: lastUpdate.data.powerKw,
-      currentPercentage: lastUpdate.data.currentPercentage,
-      currentCost: lastUpdate.data.currentCost,
+      meterStart: wsMetricNumber(lastUpdate.data.meterStart),
+      ...(energyKwh !== undefined ? { energyKwh } : {}),
+      ...(powerKw !== undefined ? { powerKw } : {}),
+      ...(currentPercentage !== undefined ? { currentPercentage } : {}),
+      ...(currentCost !== undefined ? { currentCost } : {}),
       voltageV: lastUpdate.data.voltageV,
       currentA: lastUpdate.data.currentA,
       timestamp: lastUpdate.data.timestamp || lastUpdate.timestamp,
-      finalEnergy: lastUpdate.data.finalEnergy,
+      ...(wsMetricNumber(lastUpdate.data.finalEnergy) !== undefined
+        ? { finalEnergy: wsMetricNumber(lastUpdate.data.finalEnergy) }
+        : {}),
       ...(lastUpdate.data.finalPercentage != null
         ? { finalPercentage: lastUpdate.data.finalPercentage }
         : {}),
@@ -95,12 +230,13 @@ export const SessionChargeScreen = () => {
         ? { totalDurationSeconds: lastUpdate.data.totalDurationSeconds }
         : {}),
       ...(lastUpdate.data.currency ? { currency: lastUpdate.data.currency } : {}),
-      ...(lastUpdate.data.pricePerKwh != null
-        ? { priceClpPerKwh: lastUpdate.data.pricePerKwh }
-        : {}),
+      ...(pricePerKwh !== undefined ? { priceClpPerKwh: pricePerKwh } : {}),
       reason: lastUpdate.data.reason,
       finishedAt: lastUpdate.data.finishedAt,
       message: lastUpdate.data.message,
+      ...(typeof lastUpdate.data.paymentRequired === 'boolean'
+        ? { paymentRequired: lastUpdate.data.paymentRequired }
+        : {}),
     };
 
     setChargingData(sessionData);
@@ -116,46 +252,86 @@ export const SessionChargeScreen = () => {
       setCurrentPercentage(sessionData.currentPercentage);
     if (typeof sessionData.powerKw === 'number') setCurrentPower(sessionData.powerKw);
     if (typeof sessionData.currentCost === 'number') setCurrentCost(sessionData.currentCost);
-  }, [lastUpdate, setChargingData, setIsCharging]);
+  }, [
+    lastUpdate,
+    updateSeq,
+    effectiveSessionId,
+    setChargingData,
+    setIsCharging,
+  ]);
 
+  // Solo errores fatales del WS (sesión inexistente / no autorizada). Los cortes
+  // transitorios al ir a background se muestran en el banner, no en un modal.
   useEffect(() => {
     if (!wsError) return;
-    const normalized = String(wsError || '');
+    const normalized = String(wsError).toLowerCase();
     const isSessionNotFound =
-      normalized.toLowerCase().includes('session not found') ||
-      normalized.toLowerCase().includes('not authorized');
+      normalized.includes('session not found') ||
+      normalized.includes('not authorized');
+    if (!isSessionNotFound) return;
 
-    if (isSessionNotFound) {
-      void (async () => {
-        try {
-          const active = await getActiveSession();
-          if (!active?.session) {
-            useSessionStore.getState().clearSession();
-            useActiveSessionStore.getState().clearActiveSession();
-            replaceToRoute('App');
-            return;
-          }
-        } catch {
-          // Si falla la revalidación, mantener el error visible.
+    void (async () => {
+      try {
+        const active = await getActiveSession();
+        if (!active?.session) {
+          useSessionStore.getState().clearSession();
+          useActiveSessionStore.getState().clearActiveSession();
+          replaceToRoute('App');
+          return;
         }
-        Alert.alert('Error de conexión', wsError);
-      })();
-      return;
-    }
-
-    Alert.alert('Error de conexión', wsError);
-  }, [wsError]);
+      } catch {
+        // Si falla la revalidación, el banner sigue mostrando el error.
+      }
+      showInfo('Sesión no disponible', wsError);
+    })();
+  }, [wsError, showInfo]);
 
   const clearActiveSession = useActiveSessionStore(s => s.clearActiveSession);
 
-  // Cuando finaliza la carga, redirigir a Pago y limpiar store de sesión activa (persistido)
+  // Cuando finaliza la carga, redirigir a resumen o pago según estación
   useEffect(() => {
     if (chargingData?.status !== 'FINISHED') return;
     if (navigatedToPaymentRef.current) return;
     navigatedToPaymentRef.current = true;
+    const data = chargingData;
     clearActiveSession();
-    navigation.navigate('Session', { screen: 'Pago' });
-  }, [chargingData?.status, clearActiveSession]);
+
+    if (!data?.sessionId) {
+      replaceToRoute('App');
+      return;
+    }
+
+    const totalCost =
+      data.totalCost ?? data.estimatedCostClp ?? data.currentCost ?? 0;
+    const energyKwh =
+      data.finalEnergy ?? data.energyKwh ?? data.estimatedEnergyKwh ?? 0;
+    const amountClp = Math.round(Number(totalCost) || 0);
+    const paymentRequired =
+      data.paymentRequired === true ||
+      (data.paymentRequired !== false && amountClp > 0);
+
+    const summary: PaymentSummary = {
+      sessionId: data.sessionId,
+      amountClp,
+      currency: data.currency ?? 'CLP',
+      energyKwh: Number(energyKwh) || 0,
+      priceClpPerKwh: data.priceClpPerKwh ?? null,
+      totalDurationSeconds:
+        data.totalDurationSeconds ?? data.estimatedDurationSeconds ?? null,
+      stationName: null,
+      paymentStatus: paymentRequired ? 'PENDING' : 'CONFIRMED',
+      requiresPayment: paymentRequired,
+    };
+    usePendingPaymentStore.getState().setContext(summary);
+
+    void navigateToSessionCompletion(data.sessionId, summary).catch(() => {
+      if (paymentRequired) {
+        navigation.navigate('Session', { screen: 'Pago' });
+      } else {
+        navigation.navigate('Session', { screen: 'Resumen' });
+      }
+    });
+  }, [chargingData, clearActiveSession, navigation]);
 
   // Watchdog: si la sesión queda en STOPPING (especialmente tras restauración),
   // hacer polling para confirmar término y navegar a Pago aunque se pierda el WS.
@@ -186,7 +362,7 @@ export const SessionChargeScreen = () => {
       }
 
       if (!cancelled) {
-        Alert.alert(
+        showInfo(
           'Está tardando',
           'La detención está demorando más de lo normal. Puedes reintentar detener la carga.',
         );
@@ -197,11 +373,11 @@ export const SessionChargeScreen = () => {
     return () => {
       cancelled = true;
     };
-  }, [chargingData?.status, setChargingData]);
+  }, [chargingData?.status, setChargingData, showInfo]);
 
   const runStopCharging = async () => {
     console.log('[SessionCharge] runStopCharging: inicio');
-    let sessionId = chargingData?.sessionId;
+    let sessionId = chargingData?.sessionId ?? activePersisted?.id;
     console.log('[SessionCharge] runStopCharging: sessionId del store=', sessionId ?? 'null');
     if (!sessionId && scanQrResponse?.correlationId) {
       console.log(
@@ -216,7 +392,7 @@ export const SessionChargeScreen = () => {
     }
     if (!sessionId) {
       console.log('[SessionCharge] runStopCharging: no hay sessionId, abortando');
-      Alert.alert('Error', 'No hay sesión activa para detener. Espera a que la sesión esté en carga.');
+      showInfo('Error', 'No hay sesión activa para detener. Espera a que la sesión esté en carga.');
       return;
     }
     setIsStopping(true);
@@ -249,7 +425,7 @@ export const SessionChargeScreen = () => {
       }
 
       if (!finished) {
-        Alert.alert(
+        showInfo(
           'Detención enviada',
           'La carga se está deteniendo, pero está tardando en confirmar el cierre. Intenta nuevamente en unos segundos.',
         );
@@ -261,11 +437,11 @@ export const SessionChargeScreen = () => {
       const messageStr = Array.isArray(message) ? message[0] ?? message.join(', ') : message;
       console.log('[SessionCharge] runStopCharging: error', { status, message: messageStr, err });
       if (status === 401) {
-        Alert.alert('Sesión expirada', 'Inicia sesión de nuevo.');
+        showInfo('Sesión expirada', 'Inicia sesión de nuevo.');
       } else if (status === 404) {
-        Alert.alert('No se puede detener', messageStr);
+        showInfo('No se puede detener', messageStr);
       } else {
-        Alert.alert('Error', messageStr);
+        showInfo('Error', messageStr);
       }
     } finally {
       setIsStopping(false);
@@ -279,34 +455,57 @@ export const SessionChargeScreen = () => {
   };
 
   const handleGoBack = () => {
-    Alert.alert(
-      'Salir',
-      '¿Estás seguro de que deseas salir? La sesión se cerrará.',
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Salir',
-          style: 'destructive',
-          onPress: () => {
-            useSessionStore.getState().clearSession();
-            useActiveSessionStore.getState().clearActiveSession();
-            replaceToRoute('App');
-          },
-        },
-      ],
-    );
+    showConfirm({
+      title: 'Salir',
+      message: '¿Estás seguro de que deseas salir? La sesión se cerrará.',
+      labelCancel: 'Cancelar',
+      labelConfirm: 'Salir',
+      confirmDestructive: true,
+      onConfirm: () => {
+        useSessionStore.getState().clearSession();
+        useActiveSessionStore.getState().clearActiveSession();
+        replaceToRoute('App');
+      },
+    });
   };
 
-  // Usar datos del WebSocket si existen
+  // Usar datos del WebSocket si existen; si falta currentCost, derivar energía × tarifa.
   const displayEnergy = chargingData?.energyKwh ?? currentEnergy;
   const displayPercentage = chargingData?.currentPercentage ?? currentPercentage;
   const displayPower = chargingData?.powerKw ?? currentPower;
-  const displayCost = chargingData?.currentCost ?? currentCost;
   const displayTariffClpPerKwh = chargingData?.priceClpPerKwh;
+  const displayCostClp = useMemo(() => {
+    const e = chargingData?.energyKwh ?? currentEnergy;
+    const p = chargingData?.priceClpPerKwh;
+    const derived =
+      typeof e === 'number' &&
+      typeof p === 'number' &&
+      Number.isFinite(e) &&
+      Number.isFinite(p) &&
+      e >= 0 &&
+      p > 0
+        ? Math.round(e * p)
+        : null;
+    const fromServer = chargingData?.currentCost ?? currentCost;
+    if (typeof fromServer === 'number' && Number.isFinite(fromServer)) {
+      if (fromServer > 0 || derived == null || derived <= 0) return fromServer;
+      return derived;
+    }
+    return derived ?? 0;
+  }, [
+    chargingData?.currentCost,
+    chargingData?.energyKwh,
+    chargingData?.priceClpPerKwh,
+    currentCost,
+    currentEnergy,
+  ]);
   const displayStatus = chargingData?.status ?? (isCharging ? 'CHARGING' : 'CONNECTED');
+  const sessionStartedAt = chargingData?.startedAt ?? activePersisted?.startedAt;
+  const chargeModeLabel = chargingData?.mode
+    ? CHARGE_MODE_LABELS[chargingData.mode] ?? chargingData.mode
+    : null;
+  const departureTimeLabel = formatDepartureTime(chargingData?.departureTime);
+  const showSetupCard = chargeModeLabel != null || departureTimeLabel != null;
 
   const canStop = isCharging || chargingData?.status === 'CHARGING';
   const isStoppingState = chargingData?.status === 'STOPPING';
@@ -314,23 +513,37 @@ export const SessionChargeScreen = () => {
 
   // Al restaurar sesión tras reabrir la app, normalmente NO existe `scanQrResponse` (no hay QR escaneado).
   // La fuente de verdad para mostrar esta pantalla debe ser `chargingData.sessionId`.
-  if (!chargingData?.sessionId) {
+  if (!effectiveSessionId) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <Layout style={styles.centeredBlock}>
-          <Text category="s1" appearance="hint" style={styles.emptyText}>
-            No hay sesión activa
-          </Text>
-          <Button status="primary" onPress={() => replaceToRoute('App')} style={styles.primaryButton}>
-            Volver al inicio
-          </Button>
-        </Layout>
-      </SafeAreaView>
+      <Fragment>
+        <SafeAreaView
+          style={[styles.flex1, { backgroundColor: screenBackground }]}
+          edges={['top', 'bottom']}
+        >
+          <Layout level="1" style={styles.flex1}>
+          <Layout style={styles.centeredBlock}>
+            <Text category="s1" appearance="hint" style={styles.emptyText}>
+              No hay sesión activa
+            </Text>
+            <Button status="primary" onPress={() => replaceToRoute('App')} style={styles.primaryButton}>
+              Volver al inicio
+            </Button>
+          </Layout>
+          </Layout>
+        </SafeAreaView>
+        {InfoDialog}
+        {ConfirmDialog}
+      </Fragment>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <Fragment>
+    <SafeAreaView
+      style={[styles.flex1, { backgroundColor: screenBackground }]}
+      edges={['top', 'bottom']}
+    >
+      <Layout level="1" style={styles.flex1}>
       <ScrollView
         style={styles.flex1}
         contentContainerStyle={styles.scrollContent}
@@ -343,26 +556,51 @@ export const SessionChargeScreen = () => {
           <Text status="primary" category="s1" style={styles.inProgressText}>
             Carga en curso
           </Text>
+          {!isWsConnected && (
+            <Layout style={styles.wsBanner} level="2">
+              <Text category="c1" appearance="hint" style={styles.wsBannerText}>
+                {wsError ?? 'Conectando en tiempo real…'}
+              </Text>
+              {wsError ? (
+                <Button
+                  size="small"
+                  appearance="outline"
+                  status="basic"
+                  style={styles.wsReconnect}
+                  onPress={() => reconnect()}
+                >
+                  Reintentar conexión
+                </Button>
+              ) : null}
+            </Layout>
+          )}
         </Layout>
 
         <Layout style={styles.powerRow} level="2">
           <Layout style={styles.powerLeft} level="2">
-            <Text style={styles.powerBig}>
-              {Number.isFinite(displayPower) ? Number(displayPower).toFixed(1) : '0.0'}
+            <Text category="c1" appearance="hint" style={styles.costLabel}>
+              Potencia
             </Text>
-            <Text style={styles.powerUnit}>kW</Text>
+            <View style={styles.powerValueRow}>
+              <Text style={styles.costValue}>
+                {Number.isFinite(displayPower) ? Number(displayPower).toFixed(1) : '0.0'}
+              </Text>
+              <Text style={styles.powerUnitInline}>kW</Text>
+            </View>
           </Layout>
-          <View style={styles.powerDivider} />
+          <View style={[styles.powerDivider, { backgroundColor: colors.border }]} />
           <Layout style={styles.powerRight} level="2">
-            <Text style={styles.costLabel}>Costo acumulado</Text>
+            <Text category="c1" appearance="hint" style={styles.costLabel}>
+              Costo acumulado
+            </Text>
             <Text style={styles.costValue}>
-              {Math.round(Number(displayCost) || 0).toLocaleString('es-CL')} CLP
+              {formatAccumulatedCostClp(displayCostClp)} CLP
             </Text>
           </Layout>
         </Layout>
 
         {typeof displayTariffClpPerKwh === 'number' && (
-          <Layout style={styles.card} level="2">
+          <Layout style={[styles.card, { borderColor: colors.border }]} level="2">
             <Text category="label" appearance="hint">
               Tarifa
             </Text>
@@ -372,7 +610,36 @@ export const SessionChargeScreen = () => {
           </Layout>
         )}
 
-        <ChargeProgressCard percentage={displayPercentage} power={displayPower} />
+        <ChargeProgressCard
+          energyKwh={displayEnergy}
+          startedAt={sessionStartedAt}
+          socPercent={displayPercentage}
+          targetEnergyKwh={chargingData?.estimatedEnergyKwh}
+        />
+
+        {showSetupCard && (
+          <Layout style={styles.setupRow} level="2">
+            <Layout style={styles.setupCol} level="2">
+              <Text category="c1" appearance="hint" style={styles.costLabel}>
+                Modo de carga
+              </Text>
+              <Text style={styles.setupValue}>{chargeModeLabel ?? '—'}</Text>
+            </Layout>
+            <View style={[styles.powerDivider, { backgroundColor: colors.border }]} />
+            <Layout style={[styles.setupCol, styles.setupColRight]} level="2">
+              <Text
+                category="c1"
+                appearance="hint"
+                style={[styles.costLabel, styles.setupLabelRight]}
+              >
+                Horario de salida
+              </Text>
+              <Text style={[styles.setupValue, styles.setupValueRight]}>
+                {departureTimeLabel ?? '—'}
+              </Text>
+            </Layout>
+          </Layout>
+        )}
 
         <Layout style={styles.buttonContainer}>
           {isStoppingState && (
@@ -414,7 +681,11 @@ export const SessionChargeScreen = () => {
           ¿Estás seguro de que deseas detener la carga?
         </Text>
       </ConfirmPopup>
+      </Layout>
     </SafeAreaView>
+    {InfoDialog}
+    {ConfirmDialog}
+    </Fragment>
   );
 };
 
@@ -442,6 +713,20 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     fontWeight: '700',
   },
+  wsBanner: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    gap: 8,
+  },
+  wsBannerText: {
+    textAlign: 'center',
+  },
+  wsReconnect: {
+    marginTop: 4,
+  },
   powerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -451,21 +736,21 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   powerLeft: {
+    flex: 1,
+  },
+  powerValueRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'baseline',
+    marginTop: 2,
   },
-  powerBig: {
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  powerUnit: {
+  powerUnitInline: {
     fontSize: 14,
+    fontWeight: '600',
     marginLeft: 4,
   },
   powerDivider: {
     width: 1,
     height: 32,
-    backgroundColor: '#CBD639',
     marginHorizontal: 16,
   },
   powerRight: {
@@ -526,7 +811,6 @@ const styles = StyleSheet.create({
   },
   progressTrackBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#E4E9F2',
     borderRadius: 4,
   },
   progressDot: {
@@ -539,16 +823,46 @@ const styles = StyleSheet.create({
   progressTextRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginTop: 14,
+    gap: 16,
   },
-  progressPercentage: {
-    fontSize: 18,
-    fontWeight: '700',
+  progressMetricCol: {
+    flex: 1,
   },
-  progressPower: {
-    fontSize: 14,
+  progressMetricColRight: {
+    alignItems: 'flex-end',
+  },
+  progressMetricLabelRight: {
+    textAlign: 'right',
+  },
+  progressMetricValueRight: {
+    textAlign: 'right',
+  },
+  setupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  setupCol: {
+    flex: 1,
+  },
+  setupColRight: {
+    alignItems: 'flex-end',
+  },
+  setupValue: {
+    fontSize: 15,
     fontWeight: '600',
+    marginTop: 2,
+  },
+  setupValueRight: {
+    textAlign: 'right',
+  },
+  setupLabelRight: {
+    textAlign: 'right',
   },
   buttonContainer: { marginTop: 8 },
   primaryButton: {
@@ -559,7 +873,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
-  primaryButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
   dangerButton: {
     width: '100%',
     height: 50,
@@ -568,14 +881,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
-  secondaryButton: {
-    width: '100%',
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  secondaryButtonText: { fontWeight: '600', fontSize: 16 },
 });

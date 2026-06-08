@@ -6,7 +6,7 @@ import { secureStorageAdapter } from '../../../infrastructure/storage/secureStor
 
 const STORAGE_KEY = 'amperex-active-session';
 
-export type RestoreState = 'idle' | 'loading' | 'done';
+export type RestoreState = 'loading' | 'done';
 
 export type RestoreResult =
   | { type: 'ACTIVE_SESSION'; session: ActiveSession }
@@ -18,7 +18,7 @@ export type RestoreResult =
 export interface ActiveSessionState {
   /** Sesión activa restaurada (GET /session/active). Null si no hay o tras clear. */
   activeSession: ActiveSession | null;
-  /** Estado de restauración (runtime; NO persistido). */
+  /** Estado de restauración (runtime; NO persistido). Inicia en loading hasta el primer GET /active. */
   restoreState: RestoreState;
   setSession: (response: ActiveSessionResponse) => void;
   clearActiveSession: () => void;
@@ -35,14 +35,14 @@ export const useActiveSessionStore = create<ActiveSessionState>()(
   persist(
     set => ({
       activeSession: null,
-      restoreState: 'idle',
+      restoreState: 'loading',
 
       setSession: (response: ActiveSessionResponse) => {
         set({ activeSession: response.session });
       },
 
       clearActiveSession: () => {
-        set({ activeSession: null });
+        set({ activeSession: null, restoreState: 'done' });
       },
 
       hydrateFromBackend: async () => {

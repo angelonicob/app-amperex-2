@@ -1,6 +1,12 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
+export type ProfileFormStackParams = {
+  'Editar perfil': undefined;
+};
+
 export type ProfileStackParams = {
   ProfileMain: undefined;
-  EditProfile: undefined;
+  Formularios: NavigatorScreenParams<ProfileFormStackParams>;
 };
 
 export type RootStackParams = {
@@ -10,39 +16,52 @@ export type RootStackParams = {
   Offline: undefined;
   BackendError: undefined;
   Session: { screen?: keyof SessionStackParams } | undefined;
+  CreateReserva: CreateReservationAgendaParams;
+  PasswordResetSuccess: undefined;
+};
+
+export type CreateReservationAgendaParams = {
+  stationId: string;
+  stationName: string;
+  chargePointConnectorId: string;
+  connectorLabel: string;
 };
 
 export type BottomTabStackParams = {
-  Mapa: undefined;
+  Mapa: { stationId?: string } | undefined;
   QR: undefined;
   /** Tab que abre el drawer lateral (no es una pantalla de contenido). */
   Menu: undefined;
 };
 
+export type CarFormStackParams = {
+  /** `resumeQrSession`: tras crear vehículo, continuar flujo de carga iniciado por escaneo QR. */
+  'Crear auto': { resumeQrSession?: boolean } | undefined;
+  'Solicitar vehículo': undefined;
+};
+
 export type CarStackParams = {
   'Mis autos': undefined;
-  'Crear auto': undefined;
-  'Solicitar vehículo': undefined;
+  Formularios: NavigatorScreenParams<CarFormStackParams>;
 };
 
 export type ReservaStackParams = {
   'Mis reservas': undefined;
-  'Crear reserva': undefined;
-  'Editar reserva': undefined;
 };
 
 export type SessionStackParams = {
   Pago: undefined;
+  Resumen: undefined;
   Sesión: undefined;
   Parámetros: undefined;
 };
 
 /** Rutas del drawer principal (`DrawerHome`). El orden coincide con `Navigator` + ítems del menú. */
 export type DrawerHomeParams = {
-  Home: undefined;
+  Home: NavigatorScreenParams<BottomTabStackParams> | undefined;
   Reservas: undefined;
-  Autos: undefined;
-  Perfil: undefined;
+  Autos: NavigatorScreenParams<CarStackParams> | undefined;
+  Perfil: NavigatorScreenParams<ProfileStackParams> | undefined;
   Historial: undefined;
   Tarjetas: undefined;
   Settings: undefined;

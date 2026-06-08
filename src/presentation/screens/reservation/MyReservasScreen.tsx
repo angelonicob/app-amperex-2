@@ -1,139 +1,288 @@
-import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { ReservaStackParams } from '../../routes/navigationParams';
-import { useAccountStore } from '../../../modules/user/store/useAccountStore';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { DrawerNavigationProp } from '@react-navigation/drawer';
+import { Button, Layout, Text } from '@ui-kitten/components';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { useReservationStore } from '../../../modules/reservation/store/useReservationStore';
+import { useReservationConfirmStore } from '../../../modules/reservation/store/useReservationConfirmStore';
+import type { UserReservation } from '../../../modules/reservation/types';
+import Icon from '../../../shared/components/icons/Icon';
+import { EmptyStateLayout } from '../../../shared/components/layout/EmptyStateLayout';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
+import { useConfirmDialog } from '../../../shared/hooks/useConfirmDialog';
+import { useInfoDialog } from '../../../shared/hooks/useInfoDialog';
+import type { DrawerHomeParams } from '../../routes/navigationParams';
+import { formatConnectorCode } from '../../../shared/utils/connectorDisplay';
+import type { ReservationConnectorInfo } from '../../../modules/reservation/types';
 
-type Nav = StackNavigationProp<ReservaStackParams, 'Mis reservas'>;
+function connectorCodeLabel(connector: ReservationConnectorInfo): string {
+  return formatConnectorCode(connector.connectorType, connector.connectorId);
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Activa',
+  EXPIRED: 'Expirada',
+  CANCELLED: 'Cancelada',
+  COMPLETED: 'Completada',
+};
+
+function formatRange(r: UserReservation): string {
+  const start = new Date(r.startAt);
+  const end = new Date(r.endAt);
+  const date = start.toLocaleDateString('es-CL', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const t0 = start.toLocaleTimeString('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const t1 = end.toLocaleTimeString('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${date} · ${t0} – ${t1}`;
+}
+
 export const MyReservasScreen = () => {
   const colors = useAppTheme();
-  const navigation = useNavigation<Nav>();
-  const { reservations } = useAccountStore();
+  const navigation = useNavigation<DrawerNavigationProp<DrawerHomeParams>>();
+  const { activeReservation, history, loadingList, loadReservations, cancelActiveOrId } =
+    useReservationStore();
+  const [cancelling, setCancelling] = useState(false);
+  const { showInfo, InfoDialog } = useInfoDialog();
+  const { showConfirm, ConfirmDialog } = useConfirmDialog();
+  const openConfirmModal = useReservationConfirmStore((s) => s.openReservationId);
 
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('es-CL', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+  useFocusEffect(
+    useCallback(() => {
+      void loadReservations();
+    }, [loadReservations]),
+  );
+
+  const handleOpenOnMap = useCallback(
+    (stationId: string) => {
+      navigation.navigate('Home', {
+        screen: 'Mapa',
+        params: { stationId },
+      });
+    },
+    [navigation],
+  );
+
+  const handleCancel = (id: string) => {
+    showConfirm({
+      title: 'Cancelar reserva',
+      message: '¿Deseas cancelar esta reserva?',
+      labelConfirm: 'Cancelar',
+      labelCancel: 'No',
+      confirmDestructive: true,
+      onConfirm: async () => {
+        setCancelling(true);
+        try {
+          await cancelActiveOrId(id);
+        } catch {
+          showInfo('Error', 'No se pudo cancelar la reserva');
+        } finally {
+          setCancelling(false);
+        }
+      },
     });
   };
 
-  const formatTime = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('es-CL', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  };
-
-  const cardStyle = {
-    backgroundColor: colors.backgroundSecondary,
-    borderRadius: 10,
-    padding: 20,
-    marginBottom: 20,
-    flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
-    alignItems: 'center' as const,
-  };
-
-  if (!reservations || reservations.length === 0) {
+  if (loadingList && !activeReservation && history.length === 0) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.headerBlock}>
-          <Pressable
-            onPress={() => navigation.navigate('Crear reserva')}
-            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-          >
-            <Text style={styles.primaryButtonText}>Crear reserva</Text>
-          </Pressable>
-        </View>
-        <Text style={[styles.title, { color: colors.text }]}>Mis reservas</Text>
-        <View style={styles.emptyBlock}>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            No tienes reservas
-          </Text>
-        </View>
-      </View>
+      <Layout level="1" style={styles.centered}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        {InfoDialog}
+      </Layout>
     );
   }
 
+  const hasAny = activeReservation != null || history.length > 0;
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.headerBlock}>
-        <Pressable
-          onPress={() => navigation.navigate('Crear reserva')}
-          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+    <Layout level="1" style={styles.container}>
+      {InfoDialog}
+      {ConfirmDialog}
+      {!hasAny ? (
+        <EmptyStateLayout
+          title="No tienes reservas"
+          subtitle="Cuando reserves un conector, aparecerá aquí."
+          icon={{ name: 'calendar-check', iconStyle: 'solid' }}
+        />
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.primaryButtonText}>Crear reserva</Text>
-        </Pressable>
-      </View>
-      <Text style={[styles.titleList, { color: colors.text }]}>Mis reservas</Text>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {reservations.map(reservation => (
-          <View key={reservation.id} style={cardStyle}>
-            <View style={styles.cardColumn}>
-              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-                Fecha
+          {activeReservation ? (
+            <Layout
+              level="2"
+              style={[
+                styles.card,
+                {
+                  borderColor: colors.primary,
+                  backgroundColor: colors.isDark
+                    ? colors.backgroundTertiary
+                    : colors.backgroundSecondary,
+                },
+              ]}
+            >
+              <Text category="label" style={{ color: colors.primary }}>
+                Reserva activa
               </Text>
-              <Text style={[styles.cardValue, { color: colors.text }]}>
-                {formatDate(reservation.startAt)}
+              <View style={styles.stationRow}>
+                <Text
+                  category="s1"
+                  style={[styles.cardTitle, styles.stationName, { color: colors.text }]}
+                >
+                  {activeReservation.station.name}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver estación en el mapa"
+                  onPress={() => handleOpenOnMap(activeReservation.station.id)}
+                  style={({ pressed }) => [
+                    styles.mapNavBtn,
+                    {
+                      backgroundColor: colors.isDark
+                        ? 'rgba(68, 183, 120, 0.15)'
+                        : 'rgba(68, 183, 120, 0.12)',
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <Icon name="map-location-dot" size={22} color={colors.primary} iconStyle="solid" />
+                </Pressable>
+              </View>
+              {activeReservation.connector ? (
+                <Text category="p2" style={{ color: colors.textSecondary }}>
+                  {activeReservation.connector.chargePointName ?? 'Punto de carga'} ·{' '}
+                  {connectorCodeLabel(activeReservation.connector)}
+                </Text>
+              ) : null}
+              <Text category="s2" style={{ color: colors.text, marginTop: 8 }}>
+                {formatRange(activeReservation)}
               </Text>
-            </View>
-            <View style={styles.cardColumn}>
-              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-                Hora Entrada
+              {!activeReservation.confirmedAt ? (
+                <Pressable
+                  onPress={() => openConfirmModal(activeReservation.id)}
+                  style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>
+                    Confirmar asistencia
+                  </Text>
+                </Pressable>
+              ) : (
+                <Text category="c1" style={{ color: colors.textSecondary, marginTop: 12 }}>
+                  Asistencia confirmada · {activeReservation.waitMinutes ?? 15} min de
+                  espera al conectar
+                </Text>
+              )}
+              <Button
+                appearance="ghost"
+                status="danger"
+                onPress={() => handleCancel(activeReservation.id)}
+                disabled={cancelling}
+                style={styles.cancelBtn}
+              >
+                {cancelling ? 'Cancelando…' : 'Cancelar reserva'}
+              </Button>
+            </Layout>
+          ) : null}
+
+          {history.map((r) => (
+            <Layout key={r.id} level="2" style={[styles.card, { borderColor: colors.border }]}>
+              <Text category="c1" style={{ color: colors.textSecondary }}>
+                {STATUS_LABELS[r.effectiveStatus] ?? r.effectiveStatus}
               </Text>
-              <Text style={[styles.cardValue, { color: colors.text }]}>
-                {formatTime(reservation.startAt)}
+              <View style={styles.stationRow}>
+                <Text
+                  category="s1"
+                  style={[styles.cardTitle, styles.stationName, { color: colors.text }]}
+                >
+                  {r.station.name}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver estación en el mapa"
+                  onPress={() => handleOpenOnMap(r.station.id)}
+                  style={({ pressed }) => [
+                    styles.mapNavBtn,
+                    {
+                      backgroundColor: colors.isDark
+                        ? 'rgba(255,255,255,0.06)'
+                        : colors.backgroundTertiary,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <Icon name="map-location-dot" size={22} color={colors.primary} iconStyle="solid" />
+                </Pressable>
+              </View>
+              {r.connector ? (
+                <Text category="p2" style={{ color: colors.textSecondary }}>
+                  {r.connector.chargePointName} · {connectorCodeLabel(r.connector)}
+                </Text>
+              ) : null}
+              <Text category="s2" style={{ color: colors.text, marginTop: 8 }}>
+                {formatRange(r)}
               </Text>
-            </View>
-            <View style={styles.cardColumn}>
-              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-                Hora Salida
-              </Text>
-              <Text style={[styles.cardValue, { color: colors.text }]}>
-                {formatTime(reservation.endAt)}
-              </Text>
-            </View>
-            <View style={styles.cardColumn}>
-              <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>
-                Estado
-              </Text>
-              <Text style={[styles.cardValue, { color: colors.text }]}>
-                {reservation.status}
-              </Text>
-            </View>
-          </View>
-        ))}
-      </ScrollView>
-    </View>
+            </Layout>
+          ))}
+        </ScrollView>
+      )}
+    </Layout>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  headerBlock: { marginHorizontal: 20, marginTop: 20 },
-  primaryButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
+  container: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 32 },
+  card: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 12,
   },
-  primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  title: { marginHorizontal: 20, marginTop: 20, fontSize: 22, fontWeight: '700' },
-  titleList: { marginVertical: 20, marginHorizontal: 20, fontSize: 22, fontWeight: '700' },
-  emptyBlock: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { fontSize: 16, fontWeight: '600' },
-  scroll: { marginHorizontal: 20 },
-  scrollContent: { paddingTop: 20, paddingBottom: 40 },
-  cardColumn: { flex: 1 },
-  cardLabel: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  cardValue: { fontSize: 16, fontWeight: '600' },
+  stationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  cardTitle: { fontWeight: '700' },
+  stationName: { flex: 1 },
+  mapNavBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmBtn: {
+    marginTop: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  cancelBtn: {
+    marginTop: 8,
+    width: '100%',
+  },
 });

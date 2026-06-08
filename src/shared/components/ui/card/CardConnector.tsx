@@ -12,16 +12,23 @@ export interface CardConnectorProps {
   style?: ViewStyle;
 }
 
-const OCCUPIED_BG = '#E5E7EB';
-const OCCUPIED_TEXT = '#4B5563';
-
 export const CardConnector = ({ connector, chargePoint, onReserve, style }: CardConnectorProps) => {
   const colors = useAppTheme();
-  const isOccupied = connector.status === ConnectorStatus.Occupied;
 
-  const cardBg = isOccupied ? OCCUPIED_BG : colors.background;
-  const borderColor = isOccupied ? OCCUPIED_BG : colors.primary;
-  const contentColor = isOccupied ? OCCUPIED_TEXT : colors.primary;
+  // Inactivo: el conector no puede operar por configuración o por desconexión.
+  // - chargePoint OFFLINE (sin señales OCPP recientes)
+  // - operativeStatus distinto de ACTIVE (en chargePoint o conector): INACTIVE / MAINTENANCE / DISCONNECTED
+  const isInactive =
+    chargePoint.connectionState === 'OFFLINE' ||
+    chargePoint.operativeStatus !== 'ACTIVE' ||
+    connector.operativeStatus !== 'ACTIVE';
+  const isOccupied =
+    !isInactive && connector.status === ConnectorStatus.Occupied;
+  const isUnavailable = isInactive || isOccupied;
+
+  const cardBg = isUnavailable ? colors.backgroundTertiary : colors.background;
+  const borderColor = isUnavailable ? colors.border : colors.primary;
+  const contentColor = isUnavailable ? colors.textSecondary : colors.primary;
 
   const rawConnectorType = connector.connectorType ?? '';
   const connectorCode = rawConnectorType
@@ -33,11 +40,15 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
   const powerText =
     connector.powerKw != null && connector.powerKw !== '' ? `${connector.powerKw} kW` : null;
 
+  const statusLabel = isInactive ? 'Inactivo' : isOccupied ? 'Ocupado' : null;
+
   return (
     <View style={[styles.card, { backgroundColor: cardBg, borderColor }, style]}>
       <View style={styles.row1}>
-        {isOccupied && (
-          <Text style={[styles.occupiedLabel, { color: OCCUPIED_TEXT }]}>Ocupado</Text>
+        {statusLabel != null && (
+          <Text style={[styles.statusLabel, { color: contentColor }]}>
+            {statusLabel}
+          </Text>
         )}
         <Text
           style={[styles.connectorName, { color: contentColor }]}
@@ -65,9 +76,19 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
         )}
       </View>
       <Pressable
-        onPress={onReserve}
-        style={[styles.reserveButton, { backgroundColor: colors.primary }]}
-        android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+        onPress={isInactive ? undefined : onReserve}
+        disabled={isInactive}
+        style={[
+          styles.reserveButton,
+          {
+            backgroundColor: isInactive ? colors.textDisabled : colors.primary,
+            opacity: isInactive ? 0.6 : 1,
+          },
+        ]}
+        android_ripple={
+          isInactive ? undefined : { color: 'rgba(255,255,255,0.2)' }
+        }
+        accessibilityState={{ disabled: isInactive }}
       >
         <Text style={[styles.reserveButtonText, { color: colors.background }]}>Reservar</Text>
       </Pressable>
@@ -89,7 +110,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 6,
   },
-  occupiedLabel: {
+  statusLabel: {
     fontWeight: '700',
     fontSize: 11,
     textTransform: 'uppercase',

@@ -1,31 +1,37 @@
 import { api } from '../../infrastructure/http/Api';
 import { getFirebaseAuth } from '../../infrastructure/firebase/firebaseAuth';
 import { signOut } from 'firebase/auth';
+import { useActiveSessionStore } from '../session/store/useActiveSessionStore';
 
-export async function apiRegister(params: {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
+/** Evita golpear POST /auth/session (rate limit Redis) en reintentos de bootstrap. */
+const BACKEND_SESSION_SYNC_MIN_MS = 5 * 60 * 1000;
+let lastBackendSessionSyncAt = 0;
+
+/**
+ * Sincroniza usuario en backend tras login Firebase (Bearer = ID token).
+ * Solo este endpoint usa el rate limit `mobile_firebase_establish` en el backend.
+ */
+export async function apiSyncFirebaseSession(opts?: {
+  /** true tras login explícito; false en re-hidratación de la app. */
+  force?: boolean;
 }): Promise<void> {
-  // Deprecated with Firebase Auth (client-side).
-  // Intentionally a no-op to avoid calling legacy password endpoints.
-  void params;
+  const now = Date.now();
+  if (!opts?.force && now - lastBackendSessionSyncAt < BACKEND_SESSION_SYNC_MIN_MS) {
+    return;
+  }
+  await api.post('/auth/session', undefined, {
+    headers: opts?.force
+      ? { 'X-Amperex-Session-Establish': 'login' }
+      : undefined,
+  });
+  if (opts?.force) {
+    useActiveSessionStore.getState().clearActiveSession();
+  }
+  lastBackendSessionSyncAt = now;
 }
 
-export async function apiLogin(
-  email: string,
-  password: string,
-): Promise<void> {
-  // Deprecated with Firebase Auth (client-side).
-  // Intentionally a no-op to avoid calling legacy password endpoints.
-  void email;
-  void password;
-}
-
-/** Sincroniza usuario en backend tras login Firebase (Bearer = ID token). */
-export async function apiSyncFirebaseSession(): Promise<void> {
-  await api.post('/auth/session', undefined);
+export function resetBackendSessionSyncThrottle(): void {
+  lastBackendSessionSyncAt = 0;
 }
 
 export async function apiLogout(): Promise<void> {

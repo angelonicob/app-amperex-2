@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { API_URL } from '../../infrastructure/http/Api';
 import { getFirebaseIdToken } from '../../infrastructure/firebase/firebaseSession';
 import {
@@ -16,9 +17,70 @@ export function useSessionWebSocket(
 ) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<SessionUpdate | null>(null);
+  /** Incrementa en cada session-update para forzar efectos aunque el payload sea similar. */
+  const [updateSeq, setUpdateSeq] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<ReturnType<typeof createSessionSocket> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const isConnectedRef = useRef(false);
+
+  const attachClient = useCallback(
+    (client: ReturnType<typeof createSessionSocket>) => {
+      client.setCallbacks({
+        onOpen: () => {
+          isConnectedRef.current = true;
+          setIsConnected(true);
+          setError(null);
+          const sid = sessionIdRef.current;
+          if (sid) client.joinSession(sid);
+        },
+        onClose: () => {
+          isConnectedRef.current = false;
+          setIsConnected(false);
+        },
+        onMessage: (data: unknown) => {
+          if (!isSessionWebSocketMessage(data)) return;
+          if (data.type === 'session-update') {
+            setError(null);
+            setLastUpdate(data);
+            setUpdateSeq((n) => n + 1);
+          } else if (data.type === 'error') {
+            setError(data.error);
+          }
+        },
+        onError: () => {
+          isConnectedRef.current = false;
+          setIsConnected(false);
+          setError('Error de conexión WebSocket');
+        },
+      });
+    },
+    [],
+  );
+
+  const connectWithToken = useCallback(
+    async (options?: { forceRefresh?: boolean }) => {
+      const desiredSessionId = sessionIdRef.current;
+      if (!desiredSessionId) return;
+
+      const token = await getFirebaseIdToken(
+        options?.forceRefresh ? { forceRefresh: true } : undefined,
+      );
+      if (!token) {
+        isConnectedRef.current = false;
+        setIsConnected(false);
+        setError('No hay sesión de Firebase activa');
+        return;
+      }
+
+      clientRef.current?.disconnect();
+      const client = createSessionSocket(API_URL, token);
+      clientRef.current = client;
+      attachClient(client);
+      client.connect();
+    },
+    [attachClient],
+  );
 
   useEffect(() => {
     const desiredSessionId = sessionId?.trim() ? sessionId.trim() : null;
@@ -29,96 +91,52 @@ export function useSessionWebSocket(
         clientRef.current.disconnect();
         clientRef.current = null;
       }
+      isConnectedRef.current = false;
       setIsConnected(false);
       setLastUpdate(null);
+      setUpdateSeq(0);
       setError(null);
       return;
     }
 
     let cancelled = false;
-    const run = async () => {
-      const token = await getFirebaseIdToken();
-      if (cancelled) return;
-      if (!token) {
-        setIsConnected(false);
-        setError('No hay sesión de Firebase activa');
-        return;
+    void (async () => {
+      await connectWithToken();
+      if (cancelled) {
+        clientRef.current?.disconnect();
+        clientRef.current = null;
       }
-
-      const client = createSessionSocket(API_URL, token);
-      clientRef.current = client;
-
-      client.setCallbacks({
-        onOpen: () => {
-          setIsConnected(true);
-          setError(null);
-          const sid = sessionIdRef.current;
-          if (sid) client.joinSession(sid);
-        },
-        onClose: () => setIsConnected(false),
-        onMessage: (data: unknown) => {
-          if (!isSessionWebSocketMessage(data)) return;
-          if (data.type === 'session-update') {
-            setLastUpdate(data);
-          } else if (data.type === 'error') {
-            setError(data.error);
-          }
-        },
-        onError: () => {
-          setIsConnected(false);
-          setError('Error de conexión WebSocket');
-        },
-      });
-
-      client.connect();
-    };
-    void run();
+    })();
 
     return () => {
       cancelled = true;
+      isConnectedRef.current = false;
       clientRef.current?.disconnect();
       clientRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, connectWithToken]);
+
+  // Al volver del background el SO suele cerrar el WS; reconectar sin alarmar al usuario.
+  useEffect(() => {
+    const onAppStateChange = (next: AppStateStatus) => {
+      if (next !== 'active' || !sessionIdRef.current) return;
+      const ready = clientRef.current?.getReadyState?.() ?? WebSocket.CLOSED;
+      if (!isConnectedRef.current || ready !== WebSocket.OPEN) {
+        void connectWithToken({ forceRefresh: true });
+      }
+    };
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
+  }, [connectWithToken]);
 
   const reconnect = () => {
-    void (async () => {
-      const desiredSessionId = sessionIdRef.current;
-      if (!desiredSessionId) return;
-      const token = await getFirebaseIdToken({ forceRefresh: true });
-      if (!token) {
-        setIsConnected(false);
-        setError('No hay sesión de Firebase activa');
-        return;
-      }
-      clientRef.current?.disconnect();
-      const client = createSessionSocket(API_URL, token);
-      clientRef.current = client;
-      client.setCallbacks({
-        onOpen: () => {
-          setIsConnected(true);
-          setError(null);
-          const sid = sessionIdRef.current;
-          if (sid) client.joinSession(sid);
-        },
-        onClose: () => setIsConnected(false),
-        onMessage: (data: unknown) => {
-          if (!isSessionWebSocketMessage(data)) return;
-          if (data.type === 'session-update') setLastUpdate(data);
-          else if (data.type === 'error') setError(data.error);
-        },
-        onError: () => {
-          setIsConnected(false);
-          setError('Error de conexión WebSocket');
-        },
-      });
-      client.connect();
-    })();
+    void connectWithToken({ forceRefresh: true });
   };
 
   const disconnect = () => {
     clientRef.current?.disconnect();
     clientRef.current = null;
+    isConnectedRef.current = false;
     setIsConnected(false);
     setError(null);
   };
@@ -126,6 +144,7 @@ export function useSessionWebSocket(
   return {
     isConnected,
     lastUpdate,
+    updateSeq,
     error,
     reconnect,
     disconnect,

@@ -1,4 +1,4 @@
-import { Text } from '@ui-kitten/components';
+import { Layout, Text } from '@ui-kitten/components';
 import type React from 'react';
 import {
   Image,
@@ -61,22 +61,16 @@ export const ModalPopup = ({
         onPress={onClose}
       >
         <Pressable onPress={() => {}} style={styles.cardHitSlop}>
-          <View
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: theme.background,
-                borderColor: theme.border,
-              },
-            ]}
+          <Layout
+            level="2"
+            style={[styles.sheet, { borderColor: theme.border }]}
           >
-            {imageNode ?? (image ? (
+            {imageNode ? (
+              <View style={styles.imageContainer}>{imageNode}</View>
+            ) : image ? (
               <Image source={image} style={styles.image} resizeMode="contain" />
-            ) : null)}
-            <Text
-              category="h5"
-              style={[styles.title, { color: theme.text }]}
-            >
+            ) : null}
+            <Text category="h5" style={styles.title}>
               {title}
             </Text>
             <Text category="s1" appearance="hint" style={styles.body}>
@@ -87,7 +81,7 @@ export const ModalPopup = ({
               onPress={onButtonPress}
               style={styles.button}
             />
-          </View>
+          </Layout>
         </Pressable>
       </Pressable>
     </Modal>
@@ -108,6 +102,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: CONTENT_HORIZONTAL_PADDING,
     width: '100%',
+  },
+  imageContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
   },
   image: {
     width: 120,

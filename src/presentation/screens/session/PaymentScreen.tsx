@@ -1,9 +1,8 @@
-import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Layout } from '@ui-kitten/components';
 import {
-  Alert,
-  Linking,
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,55 +13,118 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   authorizePayment,
   getInscriptionStatus,
-  getInscriptionRedirectUrl,
-  startInscription,
 } from '../../../modules/session/oneclick';
+import {
+  getPaymentSummary,
+  type PaymentSummary,
+} from '../../../modules/session/pendingPayment';
+import { usePendingPaymentStore } from '../../../modules/session/store/usePendingPaymentStore';
 import { useSessionStore } from '../../../modules/session/store/useSessionStore';
 import type { SessionStackParams } from '../../routes/navigationParams';
 import { replaceToRoute } from '../../routes/navigationRef';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
-
-const ONECLICK_DEEP_LINK = 'amperex://oneclick-inscription-success';
+import { useSystemChrome } from '../../../shared/hooks/useSystemChrome';
+import { useInfoDialog } from '../../../shared/hooks/useInfoDialog';
+import { requireBiometricForPayment } from '../../../shared/utils/biometricGuard';
+import { runOneClickInscriptionFlow } from '../../../shared/utils/oneclickInscription';
+import { SessionCompletionSummary } from '../../../shared/components/session/SessionCompletionSummary';
+import { useNavigation } from '@react-navigation/native';
 
 type Nav = StackNavigationProp<SessionStackParams, 'Pago'>;
+
+function summaryFromChargingData(
+  chargingData: ReturnType<typeof useSessionStore.getState>['chargingData'],
+): PaymentSummary | null {
+  if (!chargingData?.sessionId) return null;
+  const totalCost =
+    chargingData.totalCost ??
+    chargingData.estimatedCostClp ??
+    chargingData.currentCost ??
+    0;
+  const energyKwh =
+    chargingData.finalEnergy ??
+    chargingData.energyKwh ??
+    chargingData.estimatedEnergyKwh ??
+    0;
+  const amountClp = Math.round(Number(totalCost) || 0);
+  const paymentRequired =
+    chargingData.paymentRequired === true ||
+    (chargingData.paymentRequired !== false && amountClp > 0);
+  return {
+    sessionId: chargingData.sessionId,
+    amountClp,
+    currency: chargingData.currency ?? 'CLP',
+    energyKwh: Number(energyKwh) || 0,
+    priceClpPerKwh: chargingData.priceClpPerKwh ?? null,
+    totalDurationSeconds:
+      chargingData.totalDurationSeconds ??
+      chargingData.estimatedDurationSeconds ??
+      null,
+    stationName: null,
+    paymentStatus: paymentRequired ? 'PENDING' : 'CONFIRMED',
+    requiresPayment: paymentRequired,
+  };
+}
+
 export const PaymentScreen = () => {
   const navigation = useNavigation<Nav>();
   const colors = useAppTheme();
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [oneClickEnrolled, setOneClickEnrolled] = useState<boolean>(false);
+  const screenBackground = useSystemChrome();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [oneClickEnrolled, setOneClickEnrolled] = useState(false);
   const [oneClickCardLast4, setOneClickCardLast4] = useState<string | null>(null);
   const [oneClickCardType, setOneClickCardType] = useState<string | null>(null);
-  const [loadingInscription, setLoadingInscription] = useState<boolean>(true);
-  const { chargingData } = useSessionStore();
+  const [loadingInscription, setLoadingInscription] = useState(true);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const pendingContext = usePendingPaymentStore((s) => s.context);
+  const setPendingContext = usePendingPaymentStore((s) => s.setContext);
+  const clearPendingContext = usePendingPaymentStore((s) => s.clearContext);
+  const chargingData = useSessionStore((s) => s.chargingData);
+  const { showInfo, InfoDialog } = useInfoDialog();
 
-  const summary = useMemo(() => {
-    const currency = chargingData?.currency ?? 'CLP';
-    const totalCost =
-      chargingData?.totalCost ??
-      chargingData?.estimatedCostClp ??
-      chargingData?.currentCost ??
-      0;
-    const energyKwh =
-      chargingData?.finalEnergy ??
-      chargingData?.energyKwh ??
-      chargingData?.estimatedEnergyKwh ??
-      0;
-    const priceClpPerKwh = chargingData?.priceClpPerKwh;
-    const durationSeconds =
-      chargingData?.totalDurationSeconds ??
-      chargingData?.estimatedDurationSeconds ??
-      null;
+  const [summary, setSummary] = useState<PaymentSummary | null>(null);
 
-    return {
-      currency,
-      totalCost,
-      energyKwh,
-      priceClpPerKwh,
-      durationSeconds,
-      sessionId: chargingData?.sessionId,
-      status: chargingData?.status,
+  useEffect(() => {
+    let cancelled = false;
+    const hydrate = async () => {
+      setLoadingSummary(true);
+      setLoadError(null);
+      try {
+        if (pendingContext) {
+          if (!cancelled) {
+            setSummary(pendingContext);
+            if (pendingContext.requiresPayment === false) {
+              navigation.replace('Resumen');
+            }
+          }
+          return;
+        }
+        const fromCharge = summaryFromChargingData(chargingData);
+        if (fromCharge) {
+          if (!cancelled) {
+            setSummary(fromCharge);
+            setPendingContext(fromCharge);
+            if (fromCharge.requiresPayment === false) {
+              navigation.replace('Resumen');
+            }
+          }
+          return;
+        }
+        setLoadError('Información de pago no disponible');
+      } catch {
+        if (!cancelled) {
+          setLoadError('No se pudo cargar el resumen de pago');
+        }
+      } finally {
+        if (!cancelled) setLoadingSummary(false);
+      }
     };
-  }, [chargingData]);
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingContext, chargingData, setPendingContext, navigation]);
 
   const refreshInscriptionStatus = useCallback(async () => {
     setLoadingInscription(true);
@@ -84,42 +146,55 @@ export const PaymentScreen = () => {
     refreshInscriptionStatus();
   }, [refreshInscriptionStatus]);
 
-  useEffect(() => {
-    const handleUrl = (event: { url: string }) => {
-      if (event.url === ONECLICK_DEEP_LINK) {
-        refreshInscriptionStatus();
-      }
-    };
-    const sub = Linking.addEventListener('url', handleUrl);
-    Linking.getInitialURL().then((url) => {
-      if (url === ONECLICK_DEEP_LINK) refreshInscriptionStatus();
-    });
-    return () => sub.remove();
-  }, [refreshInscriptionStatus]);
-
   const handlePayWithOneClick = async () => {
-    if (!summary.sessionId) {
-      Alert.alert('Error', 'Información de pago no disponible');
+    // Fix #1.3 (UI): cortar reentradas antes de que React re-renderice y
+    // aplique `disabled` al Pressable. Sin esta guarda, un doble-tap rápido
+    // dispara dos requests `POST /authorize` antes del primer setState.
+    if (isProcessing) return;
+    if (!summary?.sessionId) {
+      showInfo('Error', 'Información de pago no disponible');
       return;
     }
     setIsProcessing(true);
     try {
+      // Fix #3.1: confirmación biométrica (con PIN del dispositivo como
+      // fallback) antes de invocar el cobro. Solo bloqueamos si el
+      // usuario cancela: si no hay hardware/enrolamiento, dejamos pasar
+      // porque la sesión Firebase ya autentica al usuario.
+      const formattedAmount = Math.round(
+        Number(summary.amountClp) || 0,
+      ).toLocaleString('es-CL');
+      const auth = await requireBiometricForPayment(
+        `Confirma el pago de ${formattedAmount} ${summary.currency} con One Click`,
+      );
+      if (!auth.ok) {
+        if (auth.reason === 'cancelled') {
+          // cancelación explícita del usuario; no mostramos alerta intrusiva
+          return;
+        }
+        showInfo(
+          'No se pudo verificar tu identidad',
+          'No fue posible confirmar el pago con la huella/PIN del dispositivo. Intenta nuevamente.',
+        );
+        return;
+      }
+
       await authorizePayment(summary.sessionId);
-      Alert.alert('Éxito', 'Pago con One Click realizado correctamente.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            useSessionStore.getState().clearSession();
-            replaceToRoute('App');
-          },
+      showInfo('Éxito', 'Pago con One Click realizado correctamente.', {
+        buttonTitle: 'OK',
+        onAfterAccept: () => {
+          useSessionStore.getState().clearSession();
+          clearPendingContext();
+          replaceToRoute('App');
         },
-      ]);
+      });
     } catch (err: unknown) {
       const message =
         err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          ? (err as { response?: { data?: { message?: string } } }).response?.data
+              ?.message
           : null;
-      Alert.alert(
+      showInfo(
         'Error',
         message ?? 'No se pudo procesar el pago con One Click. Intenta de nuevo.',
       );
@@ -128,23 +203,48 @@ export const PaymentScreen = () => {
     }
   };
 
+  /**
+   * #2.6: inscripción en sesión aislada vía WebBrowser. El resultado vuelve
+   * por promesa, sin listeners ni race conditions con el deep link.
+   */
   const handleStartInscription = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
     try {
-      const { token } = await startInscription();
-      const url = getInscriptionRedirectUrl(token);
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('Error', 'No se puede abrir el enlace de inscripción.');
+      const outcome = await runOneClickInscriptionFlow();
+      switch (outcome.kind) {
+        case 'success':
+          await refreshInscriptionStatus();
+          return;
+        case 'failed': {
+          const { code } = outcome;
+          showInfo(
+            'No se pudo inscribir la tarjeta',
+            code
+              ? `La inscripción fue rechazada (código ${code}). Intenta nuevamente o usa otra tarjeta.`
+              : 'La inscripción fue rechazada. Intenta nuevamente o usa otra tarjeta.',
+          );
+          await refreshInscriptionStatus();
+          return;
+        }
+        case 'cancelled':
+          return;
+        case 'unknown':
+        default:
+          showInfo(
+            'Error',
+            'No se pudo confirmar el resultado de la inscripción. Verifica si tu tarjeta quedó registrada y, si no, inténtalo nuevamente.',
+          );
+          await refreshInscriptionStatus();
+          return;
       }
     } catch (err: unknown) {
       const message =
         err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          ? (err as { response?: { data?: { message?: string } } }).response?.data
+              ?.message
           : null;
-      Alert.alert(
+      showInfo(
         'Error',
         message ?? 'No se pudo iniciar la inscripción. Intenta de nuevo.',
       );
@@ -153,131 +253,156 @@ export const PaymentScreen = () => {
     }
   };
 
-  const handleCancel = () => {
-    navigation.goBack();
+  const handleRetryLoad = async () => {
+    const sessionId =
+      pendingContext?.sessionId ?? chargingData?.sessionId ?? null;
+    if (!sessionId) {
+      setLoadError('Información de pago no disponible');
+      return;
+    }
+    setLoadingSummary(true);
+    setLoadError(null);
+    try {
+      const loaded = await getPaymentSummary(sessionId);
+      if (loaded.requiresPayment === false) {
+        setPendingContext(loaded);
+        navigation.replace('Resumen');
+        return;
+      }
+      setSummary(loaded);
+      setPendingContext(loaded);
+    } catch {
+      setLoadError('No se pudo cargar el resumen de pago');
+    } finally {
+      setLoadingSummary(false);
+    }
   };
 
-  // La pantalla de pago debe funcionar también tras restauración (reabrir app),
-  // donde normalmente no existe `scanQrResponse` (no hubo scan QR en esta sesión de app).
-  if (!chargingData?.sessionId) {
+  if (loadingSummary) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
-        <View style={styles.centeredBlock}>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Información de pago no disponible
-          </Text>
-          <Pressable
-            onPress={() => replaceToRoute('App')}
-            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-          >
-            <Text style={styles.primaryButtonText}>Volver al inicio</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+      <Fragment>
+        <SafeAreaView
+          style={[styles.flex1, { backgroundColor: screenBackground }]}
+          edges={['top', 'bottom']}
+        >
+          <Layout level="1" style={styles.centeredBlock}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </Layout>
+        </SafeAreaView>
+        {InfoDialog}
+      </Fragment>
     );
   }
 
-  const displayMinutes =
-    summary.durationSeconds != null ? Math.floor(summary.durationSeconds / 60) : null;
+  if (!summary || loadError) {
+    return (
+      <Fragment>
+        <SafeAreaView
+          style={[styles.flex1, { backgroundColor: screenBackground }]}
+          edges={['top', 'bottom']}
+        >
+          <Layout level="1" style={styles.flex1}>
+            <View style={styles.centeredBlock}>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                {loadError ?? 'Información de pago no disponible'}
+              </Text>
+              <Pressable
+                onPress={() => void handleRetryLoad()}
+                style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.primaryButtonText}>Reintentar</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => replaceToRoute('App')}
+                style={[styles.secondaryOutline, { borderColor: colors.border }]}
+              >
+                <Text style={{ color: colors.textSecondary }}>Ir al inicio</Text>
+              </Pressable>
+            </View>
+          </Layout>
+        </SafeAreaView>
+        {InfoDialog}
+      </Fragment>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
-      <ScrollView
-        style={styles.flex1}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+    <Fragment>
+      <SafeAreaView
+        style={[styles.flex1, { backgroundColor: screenBackground }]}
+        edges={['top', 'bottom']}
       >
-        <Text style={[styles.screenTitle, { color: colors.text }]}>Información de Pago</Text>
-        <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
-          Revisa el resumen antes de pagar
-        </Text>
+        <Layout level="1" style={styles.flex1}>
+          <ScrollView
+            style={styles.flex1}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={[styles.screenTitle, { color: colors.text }]}>
+              Información de Pago
+            </Text>
+            <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>
+              {summary.stationName
+                ? `${summary.stationName} · Revisa el resumen antes de pagar`
+                : 'Revisa el resumen antes de pagar'}
+            </Text>
 
-        <View style={[styles.card, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
-          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Total</Text>
-            <Text style={[styles.value, { color: colors.text }]}>
-              {Math.round(Number(summary.totalCost) || 0).toLocaleString('es-CL')} {summary.currency}
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Energía</Text>
-            <Text style={[styles.value, { color: colors.text }]}>
-              {Number(summary.energyKwh || 0).toFixed(2)} kWh
-            </Text>
-          </View>
-          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Tarifa</Text>
-            <Text style={[styles.value, { color: colors.text }]}>
-              {summary.priceClpPerKwh != null
-                ? `${Math.round(summary.priceClpPerKwh).toLocaleString('es-CL')} CLP/kWh`
-                : '—'}
-            </Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Duración</Text>
-            <Text style={[styles.value, { color: colors.text }]}>
-              {displayMinutes != null ? `${displayMinutes} min` : '—'}
-            </Text>
-          </View>
-        </View>
+            <SessionCompletionSummary summary={summary} showAmount />
 
-        {!loadingInscription && (
-          <>
-            {oneClickEnrolled ? (
+            {!loadingInscription && (
               <>
-                {oneClickCardLast4 != null && (
-                  <Text style={[styles.cardHint, { color: colors.textSecondary }]}>
-                    Tarjeta ****{oneClickCardLast4}
-                    {oneClickCardType != null ? ` (${oneClickCardType})` : ''}
-                  </Text>
+                {oneClickEnrolled ? (
+                  <>
+                    {oneClickCardLast4 != null && (
+                      <Text style={[styles.cardHint, { color: colors.textSecondary }]}>
+                        Tarjeta ****{oneClickCardLast4}
+                        {oneClickCardType != null ? ` (${oneClickCardType})` : ''}
+                      </Text>
+                    )}
+                    <Pressable
+                      onPress={handlePayWithOneClick}
+                      disabled={isProcessing}
+                      style={({ pressed }) => [
+                        styles.primaryButton,
+                        {
+                          backgroundColor: colors.primary,
+                          opacity: isProcessing || pressed ? 0.8 : 1,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.primaryButtonText}>
+                        {isProcessing ? 'Procesando...' : 'Pagar con One Click'}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <Pressable
+                    onPress={handleStartInscription}
+                    disabled={isProcessing}
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: isProcessing || pressed ? 0.8 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.primaryButtonText}>
+                      {isProcessing ? 'Procesando...' : 'Inscribir tarjeta One Click'}
+                    </Text>
+                  </Pressable>
                 )}
-                <Pressable
-                  onPress={handlePayWithOneClick}
-                  disabled={isProcessing}
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    { backgroundColor: colors.primary, opacity: isProcessing || pressed ? 0.8 : 1 },
-                  ]}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    {isProcessing ? 'Procesando...' : 'Pagar con One Click'}
-                  </Text>
-                </Pressable>
               </>
-            ) : (
-              <Pressable
-                onPress={handleStartInscription}
-                disabled={isProcessing}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  { backgroundColor: colors.primary, opacity: isProcessing || pressed ? 0.8 : 1 },
-                ]}
-              >
-                <Text style={styles.primaryButtonText}>
-                  {isProcessing ? 'Procesando...' : 'Inscribir tarjeta One Click'}
-                </Text>
-              </Pressable>
             )}
-          </>
-        )}
-
-        <Pressable
-          onPress={handleCancel}
-          disabled={isProcessing}
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            { borderColor: colors.danger, opacity: pressed ? 0.9 : 1 },
-          ]}
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>Volver</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
+          </ScrollView>
+        </Layout>
+      </SafeAreaView>
+      {InfoDialog}
+    </Fragment>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   flex1: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 40 },
   centeredBlock: {
@@ -285,6 +410,7 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
   },
   screenTitle: {
     fontSize: 22,
@@ -295,8 +421,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 24,
   },
-  emptyText: { fontSize: 16, marginBottom: 24 },
-  loadingText: { fontSize: 16 },
+  emptyText: { fontSize: 16, marginBottom: 8, textAlign: 'center' },
   card: {
     padding: 20,
     borderRadius: 12,
@@ -322,14 +447,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   primaryButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16 },
-  secondaryButton: {
+  secondaryOutline: {
     width: '100%',
-    height: 50,
+    height: 48,
     borderRadius: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 8,
   },
-  secondaryButtonText: { fontWeight: '600', fontSize: 16 },
 });

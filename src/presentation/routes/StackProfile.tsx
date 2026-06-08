@@ -1,29 +1,13 @@
-import {
-  createStackNavigator,
-  StackCardStyleInterpolator,
-} from '@react-navigation/stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import { ProfileStackParams } from './navigationParams';
 import { ProfileScreen } from '../screens/user/profile/ProfileScreen';
-import { EditProfileScreen } from '../screens/user/profile/EditProfileScreen';
+import { StackProfileForms } from './StackProfileForms';
 
 const Stack = createStackNavigator<ProfileStackParams>();
 
-const fadeAnimation: StackCardStyleInterpolator = ({ current }) => ({
-  cardStyle: {
-    opacity: current.progress,
-  },
-});
-
-export const StackProfile = () => {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        cardStyleInterpolator: fadeAnimation,
-      }}
-    >
-      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
-      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-    </Stack.Navigator>
-  );
-};
+export const StackProfile = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+    <Stack.Screen name="Formularios" component={StackProfileForms} />
+  </Stack.Navigator>
+);

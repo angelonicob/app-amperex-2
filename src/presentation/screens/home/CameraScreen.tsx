@@ -21,14 +21,23 @@ import { scanQrCode } from '../../../modules/session/scanQr';
 import { useSessionStore } from '../../../modules/session/store/useSessionStore';
 import { useAccountStore } from '../../../modules/user/store/useAccountStore';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
+import {
+  applySystemChrome,
+  getKittenScreenBackground,
+  getStatusBarStyle,
+} from '../../../shared/theme/systemChrome';
+import { useTheme } from '@ui-kitten/components';
 import { InfoPopup, ModalPopup } from '../../../shared/components/ui/popup';
 import { Disclaimer } from '../../../shared/components/permissions/Disclaimer';
 import { PermissionRequest } from '../../../shared/components/permissions/PermissionRequest';
 import { PermissionBlocked } from '../../../shared/components/permissions/PermissionBlocked';
 import { CameraScanner } from '../../../shared/components/ui/camera';
+import { navigateToSessionCompletion } from '../../../shared/utils/navigateToSessionCompletion';
+import { getPaymentSummary } from '../../../modules/session/pendingPayment';
 
 export const CameraScreen = () => {
   const { isDark } = useAppTheme();
+  const theme = useTheme();
   const {
     cameraStatus,
     refreshCameraPermission,
@@ -39,25 +48,30 @@ export const CameraScreen = () => {
   const { setScanQrResponse } = useSessionStore();
   const { fetchVehicles } = useAccountStore();
   const hasScannedRef = useRef(false);
-  /** Tras escanear sin autos: si el usuario va a Crear auto, al volver con vehículo se continúa a Parámetros. */
-  const pendingContinueAfterVehicleRef = useRef(false);
   const [isScanning, setIsScanning] = useState(false);
   const [needVehicleModalVisible, setNeedVehicleModalVisible] = useState(false);
   const [qrErrorVisible, setQrErrorVisible] = useState(false);
   const [qrErrorTitle, setQrErrorTitle] = useState('');
   const [qrErrorMessage, setQrErrorMessage] = useState('');
+  const [paymentDebtVisible, setPaymentDebtVisible] = useState(false);
+  const [paymentDebtSessionId, setPaymentDebtSessionId] = useState<string | null>(
+    null,
+  );
   const navigation = useNavigation<StackNavigationProp<RootStackParams>>();
   const isFocused = useIsFocused();
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
 
-  // Status bar blanco solo en esta pantalla; al salir se restaura según tema (contrario al fondo)
+  // Status bar claro solo en cámara; al salir se restaura el chrome del tema activo.
   useFocusEffect(
     useCallback(() => {
       StatusBar.setBarStyle('light-content');
       return () => {
-        StatusBar.setBarStyle(isDark ? 'light-content' : 'dark-content');
+        applySystemChrome(
+          getKittenScreenBackground(theme),
+          getStatusBarStyle(isDark),
+        );
       };
-    }, [isDark]),
+    }, [isDark, theme]),
   );
 
   // Pausar la cámara cuando la app va a segundo plano para evitar camera-is-restricted
@@ -88,11 +102,15 @@ export const CameraScreen = () => {
           await fetchVehicles();
           const hasVehicles = useAccountStore.getState().vehicles.length > 0;
           if (!hasVehicles) {
-            pendingContinueAfterVehicleRef.current = true;
             setNeedVehicleModalVisible(true);
           } else {
             navigation.navigate('Session', { screen: 'Parámetros' });
           }
+        } else if (result.paymentRequired) {
+          setPaymentDebtSessionId(result.pendingSessionId);
+          setQrErrorTitle(result.title);
+          setQrErrorMessage(result.message);
+          setPaymentDebtVisible(true);
         } else {
           setQrErrorTitle(result.title);
           setQrErrorMessage(result.message);
@@ -114,7 +132,6 @@ export const CameraScreen = () => {
 
   const handleCloseNeedVehicleModal = useCallback(() => {
     setNeedVehicleModalVisible(false);
-    pendingContinueAfterVehicleRef.current = false;
     useSessionStore.getState().clearSession();
     hasScannedRef.current = false;
   }, []);
@@ -123,25 +140,15 @@ export const CameraScreen = () => {
     setNeedVehicleModalVisible(false);
     navigation.navigate('App', {
       screen: 'Autos',
-      params: { screen: 'Crear auto' },
+      params: {
+        screen: 'Formularios',
+        params: {
+          screen: 'Crear auto',
+          params: { resumeQrSession: true },
+        },
+      },
     } as never);
   }, [navigation]);
-
-  useFocusEffect(
-    useCallback(() => {
-      const resumeIfReady = async () => {
-        if (!pendingContinueAfterVehicleRef.current) return;
-        await fetchVehicles();
-        const scan = useSessionStore.getState().scanQrResponse;
-        const list = useAccountStore.getState().vehicles;
-        if (scan && list.length > 0) {
-          pendingContinueAfterVehicleRef.current = false;
-          navigation.navigate('Session', { screen: 'Parámetros' });
-        }
-      };
-      void resumeIfReady();
-    }, [fetchVehicles, navigation]),
-  );
 
   const isCameraActive = isFocused && appState === 'active' && hasPermission;
   /** Sin lectura de QR mientras un modal bloquea (error de escaneo o falta de vehículo). */
@@ -202,6 +209,28 @@ export const CameraScreen = () => {
         message={qrErrorMessage}
         buttonTitle="Aceptar"
         onAccept={dismissQrError}
+      />
+      <InfoPopup
+        visible={paymentDebtVisible}
+        title={qrErrorTitle || 'Pago pendiente'}
+        message={qrErrorMessage}
+        buttonTitle="Pagar ahora"
+        onAccept={() => {
+          const sessionId = paymentDebtSessionId;
+          setPaymentDebtVisible(false);
+          hasScannedRef.current = false;
+          if (!sessionId) return;
+          void (async () => {
+            try {
+              const summary = await getPaymentSummary(sessionId);
+              await navigateToSessionCompletion(sessionId, summary);
+            } catch {
+              setQrErrorTitle('Error');
+              setQrErrorMessage('No se pudo cargar el pago pendiente.');
+              setQrErrorVisible(true);
+            }
+          })();
+        }}
       />
       <CameraScanner
         isActive={isScannerActive}
@@ -313,41 +342,38 @@ const styles = StyleSheet.create({
   },
   scanArea: {
     backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    borderRadius: 20,
     position: 'relative',
   },
   corner: {
     position: 'absolute',
-    width: 30,
-    height: 30,
+    width: 36,
+    height: 36,
     borderColor: '#FFFFFF',
   },
   topLeft: {
-    top: -2,
-    left: -2,
+    top: 0,
+    left: 0,
     borderTopWidth: 4,
     borderLeftWidth: 4,
     borderTopLeftRadius: 20,
   },
   topRight: {
-    top: -2,
-    right: -2,
+    top: 0,
+    right: 0,
     borderTopWidth: 4,
     borderRightWidth: 4,
     borderTopRightRadius: 20,
   },
   bottomLeft: {
-    bottom: -2,
-    left: -2,
+    bottom: 0,
+    left: 0,
     borderBottomWidth: 4,
     borderLeftWidth: 4,
     borderBottomLeftRadius: 20,
   },
   bottomRight: {
-    bottom: -2,
-    right: -2,
+    bottom: 0,
+    right: 0,
     borderBottomWidth: 4,
     borderRightWidth: 4,
     borderBottomRightRadius: 20,

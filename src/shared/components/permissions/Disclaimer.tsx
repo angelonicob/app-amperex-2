@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { Layout, Text } from '@ui-kitten/components';
 import { useAppTheme } from '../../theme/useAppTheme';
 
 /**
@@ -34,15 +35,19 @@ export function Disclaimer({
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
+    <Layout level="1" style={styles.container}>
+      <Layout level="2" style={styles.card}>
         {onClose != null && (
           <Pressable onPress={onClose} style={styles.closeButton}>
-            <Text style={[styles.closeText, { color: colors.text }]}>✕</Text>
+            <Text style={styles.closeText}>✕</Text>
           </Pressable>
         )}
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        <Text style={styles.message}>{message}</Text>
+        <Text category="h6" style={styles.title}>
+          {title}
+        </Text>
+        <Text category="s1" appearance="hint" style={styles.message}>
+          {message}
+        </Text>
 
         <Pressable
           onPress={handleConfirm}
@@ -53,8 +58,8 @@ export function Disclaimer({
         >
           <Text style={styles.buttonText}>{buttonText}</Text>
         </Pressable>
-      </View>
-    </View>
+      </Layout>
+    </Layout>
   );
 }
 
@@ -64,14 +69,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#F9FAFB',
   },
   card: {
     width: '100%',
     maxWidth: 360,
     padding: 24,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     position: 'relative',
   },
@@ -83,8 +86,8 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   closeText: { fontSize: 18, fontWeight: '700' },
-  title: { fontSize: 18, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  message: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 20 },
+  title: { marginBottom: 12, textAlign: 'center' },
+  message: { textAlign: 'center', marginBottom: 20 },
   button: {
     paddingVertical: 12,
     paddingHorizontal: 20,

@@ -2,6 +2,7 @@ import { api } from './Api';
 import { useAuthStore } from '../../modules/auth/store/userAuthStore';
 import { getFirebaseIdToken } from '../firebase/firebaseSession';
 import { getFirebaseAuth } from '../firebase/firebaseAuth';
+import { getMobileDeviceId } from '../device/mobileDeviceId';
 
 function logNetworkError(error: unknown) {
   if (__DEV__) {
@@ -41,6 +42,13 @@ export function setupApiAuth() {
     const token = await getFirebaseIdToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    try {
+      const deviceId = await getMobileDeviceId();
+      config.headers['X-Amperex-Device-Id'] = deviceId;
+    } catch {
+      /* omitir si SecureStore no disponible */
     }
     if (__DEV__ && url.includes('user/me')) {
       const u = getFirebaseAuth().currentUser;

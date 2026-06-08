@@ -9,8 +9,7 @@ import {
   View,
   ViewProps,
 } from 'react-native';
-import { LABEL_COLOR } from '../../../constants/formConstants';
-import { formFieldStyles, PLACEHOLDER_COLOR } from './formFieldStyles';
+import { formFieldStyles, useFormFieldTheme } from './formFieldStyles';
 import { formatFormLabel } from './formatFormLabel';
 
 export interface FormPasswordInputProps {
@@ -50,6 +49,7 @@ export const FormPasswordInput = ({
   blurOnSubmit,
   onSubmitEditing,
 }: FormPasswordInputProps) => {
+  const fieldTheme = useFormFieldTheme();
   const [passwordVisible, setPasswordVisible] = useState(false);
   const labelText = required ? label.replace(/\s*\*$/, '') : label;
 
@@ -62,11 +62,16 @@ export const FormPasswordInput = ({
       <View
         style={[
           formFieldStyles.container,
+          fieldTheme.container,
+          !disabled && fieldTheme.containerActive,
           disabled && formFieldStyles.containerDisabled,
         ]}
       >
         <Text
-          style={[formFieldStyles.label, disabled && formFieldStyles.labelDisabled]}
+          style={[
+            formFieldStyles.label,
+            disabled ? fieldTheme.labelInactive : fieldTheme.labelActive,
+          ]}
           numberOfLines={1}
         >
           {formatFormLabel(labelText)}
@@ -75,9 +80,13 @@ export const FormPasswordInput = ({
         <View style={styles.inputRow}>
           <TextInput
             ref={inputRef}
-            style={[formFieldStyles.input, styles.passwordInput, inputStyle]}
+            style={[formFieldStyles.input, fieldTheme.input, styles.passwordInput, inputStyle]}
             placeholder={placeholder}
-            placeholderTextColor={PLACEHOLDER_COLOR}
+            placeholderTextColor={
+              disabled
+                ? fieldTheme.placeholderInactiveColor
+                : fieldTheme.placeholderActiveColor
+            }
             value={value}
             onChangeText={onChangeText}
             onFocus={onFocus}
@@ -104,7 +113,7 @@ export const FormPasswordInput = ({
             <Ionicons
               name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
               size={20}
-              color={LABEL_COLOR}
+              color={fieldTheme.iconColor}
             />
           </Pressable>
         </View>

@@ -5,12 +5,14 @@ import { STAGE, API_URL as PROD_URL, API_URL_IOS, API_URL_ANDROID } from '../../
 /** Evita requests colgados; alinea instancia y default. */
 const API_TIMEOUT_MS = 15_000;
 
-export const API_URL =
-  STAGE === 'production'
-    ? PROD_URL
-    : Platform.OS === 'ios'
-      ? API_URL_IOS
-      : API_URL_ANDROID;
+function pickApiUrl(): string {
+  if (STAGE === 'production') return PROD_URL;
+  if (Platform.OS === 'ios') return API_URL_IOS;
+  return API_URL_ANDROID;
+}
+
+/** Siempre la URL definida en app.config / `.env` (extra); sin reescrituras automáticas. */
+export const API_URL = pickApiUrl();
 
 axios.defaults.timeout = API_TIMEOUT_MS;
 
@@ -22,5 +24,9 @@ const api = axios.create({
     'X-Amperex-Client': 'mobile',
   },
 });
+
+if (__DEV__) {
+  console.log('[API] baseURL', API_URL, { stage: STAGE, platform: Platform.OS });
+}
 
 export { api };

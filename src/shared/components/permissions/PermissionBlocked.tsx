@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, Linking } from 'react-native';
+import { Pressable, StyleSheet, Linking } from 'react-native';
+import { Layout, Text } from '@ui-kitten/components';
 import { useAppTheme } from '../../theme/useAppTheme';
 
 /**
@@ -34,13 +35,19 @@ export function PermissionBlocked({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background ?? '#F9FAFB' }]}>
-      <View style={styles.card}>
+    <Layout level="1" style={styles.container}>
+      <Layout level="2" style={styles.card}>
         {screenName != null && screenName !== '' && (
-          <Text style={styles.screenName}>{screenName}</Text>
+          <Text category="c1" appearance="hint" style={styles.screenName}>
+            {screenName}
+          </Text>
         )}
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        <Text style={styles.message}>{message}</Text>
+        <Text category="h6" style={styles.title}>
+          {title}
+        </Text>
+        <Text category="s1" appearance="hint" style={styles.message}>
+          {message}
+        </Text>
 
         <Pressable
           onPress={() => Linking.openSettings()}
@@ -54,11 +61,13 @@ export function PermissionBlocked({
 
         {onRefresh != null && (
           <Pressable onPress={handleRefresh} style={styles.secondaryButton}>
-            <Text style={[styles.secondaryText, { color: colors.primary }]}>Ya habilité el permiso</Text>
+            <Text category="s1" style={{ color: colors.primary }}>
+              Ya habilité el permiso
+            </Text>
           </Pressable>
         )}
-      </View>
-    </View>
+      </Layout>
+    </Layout>
   );
 }
 
@@ -69,14 +78,12 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     padding: 24,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
   },
-  screenName: { fontSize: 12, color: '#6B7280', marginBottom: 6 },
-  title: { fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  message: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginBottom: 18 },
+  screenName: { marginBottom: 6, textAlign: 'center' },
+  title: { marginBottom: 8, textAlign: 'center' },
+  message: { textAlign: 'center', marginBottom: 18 },
   button: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, width: '100%', alignItems: 'center' },
   buttonText: { color: '#FFFFFF', fontWeight: '700' },
   secondaryButton: { marginTop: 12 },
-  secondaryText: { fontWeight: '600' },
 });

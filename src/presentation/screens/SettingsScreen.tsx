@@ -1,10 +1,14 @@
-import { Button, Input, Layout, Text } from '@ui-kitten/components';
+import { Input, Layout, Text } from '@ui-kitten/components';
 import { isAxiosError } from 'axios';
+import * as Application from 'expo-application';
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { ThemeMode, useThemeStore } from '../../shared/theme/store/useThemeStore';
+import { useAppTheme } from '../../shared/theme/useAppTheme';
 import { api } from '../../infrastructure/http/Api';
+import { ButtonPrimary, ButtonTransparent } from '../../shared/components/ui/button';
 import { ConfirmPopup } from '../../shared/components/ui/popup/ConfirmPopup';
+import { SectionLabel } from '../../shared/components/ui/SectionLabel';
 import { getFirebaseAuth } from '../../infrastructure/firebase/firebaseAuth';
 import {
   EmailAuthProvider,
@@ -14,7 +18,13 @@ import { deleteMe } from '../../modules/user/user';
 import { useAuthStore } from '../../modules/auth/store/userAuthStore';
 
 export const SettingsScreen = () => {
+  const colors = useAppTheme();
+  const { height: windowHeight } = useWindowDimensions();
+  const themeSectionPaddingY = Math.max(12, Math.min(28, Math.round(windowHeight * 0.022)));
   const { themeMode, setThemeMode } = useThemeStore();
+  const securityBlockSurface = colors.isDark
+    ? colors.backgroundTertiary
+    : colors.backgroundSecondary;
   const logout = useAuthStore((s) => s.logout);
 
   const [resetSending, setResetSending] = useState(false);
@@ -30,17 +40,28 @@ export const SettingsScreen = () => {
 
   const handleThemeChange = (mode: ThemeMode) => setThemeMode(mode);
 
-  const ThemeButton = ({ mode, label }: { mode: ThemeMode; label: string }) => (
-    <Button
-      size="small"
-      appearance={themeMode === mode ? 'filled' : 'outline'}
-      status="primary"
-      onPress={() => handleThemeChange(mode)}
-      style={styles.themeButton}
-    >
-      {label}
-    </Button>
-  );
+  const appVersionLabel = useMemo(() => {
+    const version = Application.nativeApplicationVersion ?? '—';
+    const rawBuild = Application.nativeBuildVersion;
+    const buildNumber = rawBuild != null ? Number(rawBuild) : NaN;
+    const build = Number.isFinite(buildNumber)
+      ? String(buildNumber + 100)
+      : rawBuild;
+    return build && build !== version
+      ? `Versión ${version} (${build})`
+      : `Versión ${version}`;
+  }, []);
+
+  const ThemeButton = ({ mode, label }: { mode: ThemeMode; label: string }) => {
+    const selected = themeMode === mode;
+    return (
+      <ButtonPrimary
+        title={label}
+        onPress={() => handleThemeChange(mode)}
+        style={[styles.themeButton, !selected && styles.themeButtonUnselected]}
+      />
+    );
+  };
 
   const hasPasswordProvider = useMemo(() => {
     const u = getFirebaseAuth().currentUser;
@@ -136,36 +157,41 @@ export const SettingsScreen = () => {
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
       >
-        <Text category="h5" style={styles.title}>
-          Configuración
-        </Text>
-        <Layout style={styles.section}>
-          <Text category="s1" style={styles.sectionTitle}>
-            Tema
-          </Text>
-          <Text category="p2" appearance="hint" style={styles.sectionDescription}>
-            Selecciona el tema de la aplicación
-          </Text>
-          <Layout style={styles.buttonContainer}>
+        <SectionLabel
+          label="Tema"
+          bleedHorizontal={20}
+          style={styles.firstSectionLabel}
+        />
+        <View style={[styles.themeSection, { paddingVertical: themeSectionPaddingY }]}>
+          <View style={styles.buttonContainer}>
             <ThemeButton mode="light" label="Claro" />
             <ThemeButton mode="dark" label="Oscuro" />
             <ThemeButton mode="system" label="Sistema" />
-          </Layout>
-        </Layout>
+          </View>
+        </View>
 
+        <SectionLabel label="Seguridad" bleedHorizontal={20} />
         <Layout style={styles.section}>
-          <Text category="s1" style={styles.sectionTitle}>
-            Seguridad
-          </Text>
-          <Text category="p2" appearance="hint" style={styles.sectionDescription}>
-            Administra tu contraseña y tu cuenta
-          </Text>
-
-          <View style={styles.securityBlock}>
-            <Text category="s2" style={styles.securityBlockTitle}>
+          <Layout
+            level="2"
+            style={[
+              styles.securityBlock,
+              {
+                borderColor: colors.border,
+                backgroundColor: securityBlockSurface,
+              },
+            ]}
+          >
+            <Text
+              category="s2"
+              style={[styles.securityBlockTitle, { color: colors.text }]}
+            >
               Recuperar contraseña
             </Text>
-            <Text category="p2" appearance="hint" style={styles.securityBlockBody}>
+            <Text
+              category="p2"
+              style={[styles.securityBlockBody, { color: colors.textSecondary }]}
+            >
               Te enviaremos un correo con un enlace para restablecer tu contraseña. No
               olvides revisar spam.
             </Text>
@@ -184,33 +210,58 @@ export const SettingsScreen = () => {
                 Correo enviado.
               </Text>
             ) : null}
-            <Button
-              status="primary"
-              appearance="filled"
+            <ButtonPrimary
+              title={
+                resetSending
+                  ? 'Enviando…'
+                  : cooldownSec > 0
+                    ? `Reenviar en ${cooldownSec}s`
+                    : 'Enviar correo'
+              }
               onPress={() => void handleRequestPasswordReset()}
               disabled={resetSending || cooldownSec > 0}
-            >
-              {resetSending
-                ? 'Enviando…'
-                : cooldownSec > 0
-                  ? `Reenviar en ${cooldownSec}s`
-                  : 'Enviar correo'}
-            </Button>
-          </View>
+            />
+          </Layout>
 
-          <View style={[styles.securityBlock, styles.dangerBlock]}>
-            <Text category="s2" style={styles.securityBlockTitle}>
+          <Layout
+            level="2"
+            style={[
+              styles.securityBlock,
+              styles.dangerBlock,
+              {
+                borderColor: colors.border,
+                backgroundColor: securityBlockSurface,
+              },
+            ]}
+          >
+            <Text
+              category="s2"
+              style={[styles.securityBlockTitle, { color: colors.text }]}
+            >
               Eliminar cuenta
             </Text>
-            <Text category="p2" appearance="hint" style={styles.securityBlockBody}>
+            <Text
+              category="p2"
+              style={[styles.securityBlockBody, { color: colors.textSecondary }]}
+            >
               Esta acción es irreversible. Tu cuenta será desactivada y ya no podrás
               iniciar sesión.
             </Text>
-            <Button status="danger" appearance="outline" onPress={() => setDeleteOpen(true)}>
-              Eliminar mi cuenta
-            </Button>
-          </View>
+            <ButtonTransparent
+              title="Eliminar mi cuenta"
+              color={colors.danger}
+              onPress={() => setDeleteOpen(true)}
+            />
+          </Layout>
         </Layout>
+
+        <Text
+          category="c1"
+          appearance="hint"
+          style={[styles.versionLabel, { color: colors.textSecondary }]}
+        >
+          {appVersionLabel}
+        </Text>
       </ScrollView>
 
       <ConfirmPopup
@@ -228,7 +279,7 @@ export const SettingsScreen = () => {
         loading={deleteBusy}
         onConfirm={() => void handleConfirmDelete()}
       >
-        <Text category="p2" appearance="hint" style={styles.deleteBody}>
+        <Text category="p2" style={[styles.deleteBody, { color: colors.textSecondary }]}>
           Confirma que deseas eliminar tu cuenta. Esto borrará tu usuario en Firebase y
           desactivará tu cuenta en el servidor (sin perder tus cargas históricas).
         </Text>
@@ -256,23 +307,28 @@ export const SettingsScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
-  contentContainer: { padding: 20, paddingTop: 20 },
-  title: { marginBottom: 24 },
+  contentContainer: {
+    padding: 20,
+    paddingTop: 8,
+  },
+  firstSectionLabel: { marginTop: 0 },
+  themeSection: {
+    alignItems: 'center',
+  },
   section: { marginBottom: 24 },
-  sectionTitle: { marginBottom: 8 },
-  sectionDescription: { marginBottom: 16 },
   buttonContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 8,
   },
   themeButton: { minWidth: 100 },
+  themeButtonUnselected: { opacity: 0.45 },
   securityBlock: {
     marginTop: 12,
     padding: 14,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
     gap: 10,
   },
   dangerBlock: {
@@ -292,5 +348,9 @@ const styles = StyleSheet.create({
   },
   deletePasswordInput: {
     marginBottom: 8,
+  },
+  versionLabel: {
+    marginTop: 24,
+    textAlign: 'center',
   },
 });

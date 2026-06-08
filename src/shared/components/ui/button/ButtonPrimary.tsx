@@ -9,9 +9,6 @@ import {
 } from 'react-native';
 import { useAppTheme } from '../../../theme/useAppTheme';
 
-/** Verde fijo de marca; no depende del tema claro/oscuro. */
-const PRIMARY_BG = '#44B778';
-
 interface ButtonPrimaryProps {
   title: string;
   onPress: () => void;
@@ -38,20 +35,16 @@ export const ButtonPrimary = ({
     if (theme.isDark) {
       return {
         shadowColor: theme.black,
-        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.55,
         shadowRadius: 10,
-        elevation: 10,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
       } as const;
     }
     return {
       shadowColor: theme.black,
-      shadowOffset: { width: 0, height: 5 },
       shadowOpacity: 0.34,
       shadowRadius: 10,
-      elevation: 8,
     } as const;
   }, [theme.black, theme.isDark]);
 
@@ -66,7 +59,7 @@ export const ButtonPrimary = ({
         styles.base,
         shadowStyle,
         style,
-        { backgroundColor: PRIMARY_BG },
+        { backgroundColor: theme.primary },
       ]}
     >
       {(evaProps: TextProps) => (

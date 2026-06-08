@@ -1,29 +1,28 @@
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Layout } from '@ui-kitten/components';
 import { useAppTheme } from '../../../../shared/theme/useAppTheme';
 import { globalStyles } from '../../../../shared/theme/theme';
-import type { CarStackParams } from '../../../routes/navigationParams';
+import type { CarFormStackParams } from '../../../routes/navigationParams';
 import { createVariantRequest } from '../../../../modules/vehicles/requestVariant';
 import { FormInput, FormText } from '../../../../shared/components/ui/form';
-import { InfoPopup } from '../../../../shared/components/ui/popup/InfoPopup';
+import { useInfoDialog } from '../../../../shared/hooks/useInfoDialog';
 
-type Nav = StackNavigationProp<CarStackParams, 'Solicitar vehículo'>;
+type Nav = StackNavigationProp<CarFormStackParams, 'Solicitar vehículo'>;
+
 export const RequestVehicleScreen = () => {
   const navigation = useNavigation<Nav>();
   const colors = useAppTheme();
-  const insets = useSafeAreaInsets();
   const [form, setForm] = useState({
     brand: '',
     model: '',
@@ -32,7 +31,7 @@ export const RequestVehicleScreen = () => {
     additionalInfo: '',
   });
   const [submitting, setSubmitting] = useState(false);
-  const [successPopupVisible, setSuccessPopupVisible] = useState(false);
+  const { showInfo, InfoDialog } = useInfoDialog();
   const scrollViewRef = useRef<ScrollView>(null);
   const brandContainerRef = useRef<View>(null);
   const modelContainerRef = useRef<View>(null);
@@ -52,7 +51,7 @@ export const RequestVehicleScreen = () => {
         if (container && scrollView) {
           container.measureLayout(
             scrollView as any,
-            (x, y, width, height) => {
+            (x, y) => {
               scrollViewRef.current?.scrollTo({
                 y: y - 100,
                 animated: true,
@@ -76,12 +75,12 @@ export const RequestVehicleScreen = () => {
       !form.variant.trim() ||
       !form.year.trim()
     ) {
-      Alert.alert('Error', 'Por favor completa todos los campos obligatorios');
+      showInfo('Error', 'Por favor completa todos los campos obligatorios');
       return;
     }
     const yearNum = parseInt(form.year, 10);
     if (isNaN(yearNum) || yearNum < 1990 || yearNum > 2100) {
-      Alert.alert('Error', 'Ingresa un año válido');
+      showInfo('Error', 'Ingresa un año válido');
       return;
     }
     setSubmitting(true);
@@ -93,99 +92,141 @@ export const RequestVehicleScreen = () => {
         yearFrom: yearNum,
         notes: form.additionalInfo.trim() || undefined,
       });
-      setSuccessPopupVisible(true);
-    } catch (e: any) {
-      const message = e?.response?.data?.message ?? e?.message ?? 'Error al enviar la solicitud';
-      Alert.alert('Error', String(message));
+      showInfo(
+        'Solicitud enviada',
+        'Tu solicitud ha sido enviada. Te notificaremos cuando tu vehículo esté disponible.',
+        {
+          onAfterAccept: () => navigation.getParent()?.navigate('Mis autos'),
+        },
+      );
+    } catch (e: unknown) {
+      const message =
+        e &&
+        typeof e === 'object' &&
+        'response' in e &&
+        (e as { response?: { data?: { message?: string } } }).response?.data?.message
+          ? String((e as { response: { data: { message: string } } }).response.data.message)
+          : e && typeof e === 'object' && 'message' in e
+            ? String((e as { message?: string }).message)
+            : 'Error al enviar la solicitud';
+      showInfo('Error', message);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Layout style={globalStyles.container}>
-      <KeyboardAvoidingView style={globalStyles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-        <ScrollView
-          ref={scrollViewRef}
-          style={globalStyles.scroll}
-          contentContainerStyle={[
-            globalStyles.scrollContent,
-            {
-              paddingTop: insets.top + 24,
-              paddingBottom: 40,
-              flexGrow: 1,
-              justifyContent: 'center',
-            },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <Fragment>
+      <Layout style={globalStyles.container}>
+        <KeyboardAvoidingView
+          style={globalStyles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
-          <View style={{ alignItems: 'center' }}>
-            <Text style={[{ textAlign: 'center', fontSize: 28, fontWeight: 'bold' as const }, { color: colors.text }]}>Solicitar Vehículo</Text>
-            <Text style={[{ textAlign: 'center', marginTop: 8, opacity: 0.7, fontSize: 14 }, { color: colors.textSecondary }]}>Si no encuentras tu vehículo, solicítalo aquí</Text>
-          </View>
-          <View style={{ marginTop: 20 }}>
-            <FormInput
-              label="Marca *"
-              placeholder="Ingresa la marca del vehículo"
-              value={form.brand}
-              onChangeText={(text: string) => setForm({ ...form, brand: text })}
-              required
-              containerRef={brandContainerRef}
-              onFocus={() => scrollToInput(brandContainerRef)}
-            />
-            <FormInput
-              label="Modelo *"
-              placeholder="Ingresa el modelo del vehículo"
-              value={form.model}
-              onChangeText={(text: string) => setForm({ ...form, model: text })}
-              required
-              containerRef={modelContainerRef}
-              onFocus={() => scrollToInput(modelContainerRef)}
-            />
-            <FormInput
-              label="Versión *"
-              placeholder="Ingresa la variante del vehículo"
-              value={form.variant}
-              onChangeText={(text: string) => setForm({ ...form, variant: text })}
-              required
-              containerRef={variantContainerRef}
-              onFocus={() => scrollToInput(variantContainerRef)}
-            />
-            <FormInput
-              label="Año *"
-              placeholder="Ingresa el año del vehículo"
-              value={form.year}
-              onChangeText={(text: string) => setForm({ ...form, year: text })}
-              keyboardType="numeric"
-              required
-              containerRef={yearContainerRef}
-              onFocus={() => scrollToInput(yearContainerRef)}
-            />
-            <FormText
-              label="Información adicional"
-              placeholder="Información adicional sobre el vehículo"
-              value={form.additionalInfo}
-              onChangeText={(text: string) => setForm({ ...form, additionalInfo: text })}
-              containerRef={additionalInfoContainerRef}
-              onFocus={() => scrollToInput(additionalInfoContainerRef)}
-            />
-          </View>
-          <Pressable onPress={onSubmitRequest} disabled={submitting} style={{ marginTop: 20, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 8, alignItems: 'center', opacity: submitting ? 0.7 : 1 }}>
-            <Text style={{ color: colors.white, fontWeight: '600' as const }}>{submitting ? 'Enviando…' : 'Enviar solicitud'}</Text>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
-      <InfoPopup
-        visible={successPopupVisible}
-        title="Solicitud enviada"
-        message="Tu solicitud ha sido enviada. Te notificaremos cuando tu vehículo esté disponible."
-        buttonTitle="OK"
-        onAccept={() => {
-          setSuccessPopupVisible(false);
-          navigation.navigate('Mis autos');
-        }}
-      />
-    </Layout>
+          <ScrollView
+            ref={scrollViewRef}
+            style={globalStyles.scroll}
+            contentContainerStyle={[
+              globalStyles.scrollContent,
+              styles.scrollContent,
+              { paddingTop: 16, paddingBottom: 40 },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              Si no encuentras tu vehículo, solicítalo aquí
+            </Text>
+            <View style={styles.formBlock}>
+              <FormInput
+                label="Marca *"
+                placeholder="Ingresa la marca del vehículo"
+                value={form.brand}
+                onChangeText={(text: string) => setForm({ ...form, brand: text })}
+                required
+                containerRef={brandContainerRef}
+                onFocus={() => scrollToInput(brandContainerRef)}
+              />
+              <FormInput
+                label="Modelo *"
+                placeholder="Ingresa el modelo del vehículo"
+                value={form.model}
+                onChangeText={(text: string) => setForm({ ...form, model: text })}
+                required
+                containerRef={modelContainerRef}
+                onFocus={() => scrollToInput(modelContainerRef)}
+              />
+              <FormInput
+                label="Versión *"
+                placeholder="Ingresa la variante del vehículo"
+                value={form.variant}
+                onChangeText={(text: string) => setForm({ ...form, variant: text })}
+                required
+                containerRef={variantContainerRef}
+                onFocus={() => scrollToInput(variantContainerRef)}
+              />
+              <FormInput
+                label="Año *"
+                placeholder="Ingresa el año del vehículo"
+                value={form.year}
+                onChangeText={(text: string) => setForm({ ...form, year: text })}
+                keyboardType="numeric"
+                required
+                containerRef={yearContainerRef}
+                onFocus={() => scrollToInput(yearContainerRef)}
+              />
+              <FormText
+                label="Información adicional"
+                placeholder="Información adicional sobre el vehículo"
+                value={form.additionalInfo}
+                onChangeText={(text: string) => setForm({ ...form, additionalInfo: text })}
+                containerRef={additionalInfoContainerRef}
+                onFocus={() => scrollToInput(additionalInfoContainerRef)}
+              />
+            </View>
+            <Pressable
+              onPress={onSubmitRequest}
+              disabled={submitting}
+              style={[
+                styles.submitButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: submitting ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.submitLabel, { color: colors.white }]}>
+                {submitting ? 'Enviando…' : 'Enviar solicitud'}
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Layout>
+      {InfoDialog}
+    </Fragment>
   );
 };
+
+const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+  },
+  subtitle: {
+    textAlign: 'center',
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  formBlock: {
+    marginTop: 0,
+  },
+  submitButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitLabel: {
+    fontWeight: '600',
+  },
+});

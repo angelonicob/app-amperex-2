@@ -74,7 +74,11 @@ export default ({ config }) => {
     android: {
       ...config.android,
       googleServicesFile,
-      usesCleartextTraffic: true,
+      // #2.4: cleartext (HTTP) solo en dev/preview, NUNCA en producción.
+      // En dev se necesita para `http://192.168.x.x` contra el backend local.
+      // `STAGE === 'prod'` apaga el flag y el sistema Android bloquea cualquier
+      // tráfico HTTP residual aunque el código tenga una URL mal configurada.
+      usesCleartextTraffic: env.STAGE !== 'prod',
       config: config.android?.config ?? {},
     },
   };

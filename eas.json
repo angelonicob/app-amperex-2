@@ -10,9 +10,13 @@
       "distribution": "internal",
       "env": {
         "STAGE": "dev",
-        "API_URL": "http://192.168.43.172:3000/api/v1/mobile",
-        "API_URL_IOS": "http://192.168.43.172:3000/api/v1/mobile",
-        "API_URL_ANDROID": "http://192.168.43.172:3000/api/v1/mobile"
+        "API_URL": "http://192.168.8.123:3000/api/v1/mobile",
+        "API_URL_IOS": "http://192.168.8.123:3000/api/v1/mobile",
+        "API_URL_ANDROID": "http://192.168.8.123:3000/api/v1/mobile",
+        "FIREBASE_API_KEY": "AIzaSyBqjS3YJH27L-jOYYzjKf4z1NlfvjGhKWQ",
+        "FIREBASE_AUTH_DOMAIN": "amperex-test.firebasestorage.app",
+        "FIREBASE_PROJECT_ID": "amperex-test",
+        "FIREBASE_APP_ID": "1:696479570717:android:6455a79d9fada3f0445ff4"
       }
     },
     "preview": {
@@ -20,9 +24,13 @@
       "distribution": "internal",
       "env": {
         "STAGE": "dev",
-        "API_URL": "http://192.168.43.172:3000/api/v1/mobile",
-        "API_URL_IOS": "http://192.168.43.172:3000/api/v1/mobile",
-        "API_URL_ANDROID": "http://192.168.43.172:3000/api/v1/mobile"
+        "API_URL": "https://app.amperex.cl/api/v1/mobile",
+        "API_URL_IOS": "https://app.amperex.cl/api/v1/mobile",
+        "API_URL_ANDROID": "https://app.amperex.cl/api/v1/mobile",
+        "FIREBASE_API_KEY": "AIzaSyC0QxMSBDTZjJQxZMYliawxY6zquC-UeL8",
+        "FIREBASE_AUTH_DOMAIN": "amperex-auth.firebaseapp.com",
+        "FIREBASE_PROJECT_ID": "amperex-auth",
+        "FIREBASE_APP_ID": "1:276998355601:android:f1d9b0e68c450fb231dd30"
       }
     },
     "production": {
@@ -30,9 +38,13 @@
       "autoIncrement": true,
       "env": {
         "STAGE": "production",
-        "API_URL": "http://192.168.43.172:3000/api/v1/mobile",
-        "API_URL_IOS": "http://192.168.43.172:3000/api/v1/mobile",
-        "API_URL_ANDROID": "http://192.168.43.172:3000/api/v1/mobile"
+        "API_URL": "https://app.amperex.cl/api/v1/mobile",
+        "API_URL_IOS": "https://app.amperex.cl/api/v1/mobile",
+        "API_URL_ANDROID": "https://app.amperex.cl/api/v1/mobile",
+        "FIREBASE_API_KEY": "AIzaSyBqjS3YJH27L-jOYYzjKf4z1NlfvjGhKWQ",
+        "FIREBASE_AUTH_DOMAIN": "696479570717-hbfqko14shdlqon072qn41f900kmp166.apps.googleusercontent.com",
+        "FIREBASE_PROJECT_ID": "amperex-test",
+        "FIREBASE_APP_ID": "1:696479570717:android:6455a79d9fada3f0445ff4"
       }
     },
     "development-simulator": {
