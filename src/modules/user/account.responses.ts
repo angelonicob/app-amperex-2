@@ -14,15 +14,3 @@ export interface CarItemResponse {
 }
 
 export type CarGetResponse = CarItemResponse[];
-
-export interface ReservationCreateResponse {
-  id: number;
-  userId: number;
-  vehicleId: number;
-  stationId: number | null;
-  startAt: string;
-  endAt: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}

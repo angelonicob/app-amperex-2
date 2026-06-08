@@ -1,6 +1,7 @@
-import { Button } from '@ui-kitten/components';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useAppTheme } from '../../../theme/useAppTheme';
+import { ButtonPrimary, ButtonTransparent } from '../button';
 import { PopupShell } from './PopupShell';
 
 export type ConfirmPopupProps = {
@@ -31,48 +32,57 @@ export const ConfirmPopup = ({
   onConfirm,
   confirmDestructive = false,
   loading = false,
-}: ConfirmPopupProps) => (
-  <PopupShell
-    visible={visible}
-    onRequestClose={() => {}}
-    onDismissed={onDismissed}
-    title={title}
-    footer={
-      <View style={styles.actions}>
-        <Button
-          appearance="filled"
-          status={confirmDestructive ? 'danger' : 'primary'}
-          style={styles.actionBtn}
-          onPress={onConfirm}
-          disabled={loading}
-        >
-          {loading ? '…' : labelConfirm}
-        </Button>
-        <Button
-          appearance="ghost"
-          status="danger"
-          style={[styles.actionBtn, styles.actionBtnLeft]}
-          onPress={onRequestClose}
-          disabled={loading}
-        >
-          {labelCancel}
-        </Button>
-      </View>
-    }
-  >
-    {children}
-  </PopupShell>
-);
+}: ConfirmPopupProps) => {
+  const colors = useAppTheme();
+  const confirmTitle = loading ? '…' : labelConfirm;
+
+  return (
+    <PopupShell
+      visible={visible}
+      onRequestClose={() => {}}
+      onDismissed={onDismissed}
+      title={title}
+      footer={
+        <View style={styles.actions}>
+          {confirmDestructive ? (
+            <ButtonTransparent
+              title={confirmTitle}
+              onPress={onConfirm}
+              disabled={loading}
+              color="#FFFFFF"
+              style={[styles.actionBtn, { backgroundColor: colors.danger }]}
+            />
+          ) : (
+            <ButtonPrimary
+              title={confirmTitle}
+              onPress={onConfirm}
+              disabled={loading}
+              style={styles.actionBtn}
+            />
+          )}
+          <ButtonTransparent
+            title={labelCancel}
+            onPress={onRequestClose}
+            disabled={loading}
+            color={colors.danger}
+            style={styles.actionBtn}
+          />
+        </View>
+      }
+    >
+      {children}
+    </PopupShell>
+  );
+};
 
 const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    gap: 12,
+    marginTop: 16,
   },
   actionBtn: {
     flex: 1,
-  },
-  actionBtnLeft: {
-    marginRight: 12,
   },
 });

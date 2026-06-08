@@ -1,16 +1,22 @@
 import { create } from 'zustand';
 import {
-  getCameraPermissionStatus,
+  getCameraPermissionDetail,
   requestCameraPermission as requestCamera,
 } from '../camera';
 import {
   getLocationPermissionDetail,
   requestLocationPermission as requestLocation,
 } from '../location';
+import {
+  getNotificationPermissionDetail,
+  isNotificationsModuleAvailable,
+  requestNotificationPermission as requestNotifications,
+} from '../notifications';
 import type { PermissionState } from '../types';
 import {
   toPermissionStateFromCamera,
   toPermissionStateFromLocation,
+  toPermissionStateFromNotifications,
 } from '../types';
 
 export interface PermissionsState {
@@ -22,6 +28,10 @@ export interface PermissionsState {
   cameraStatus: PermissionState;
   /** true mientras se está consultando o solicitando el permiso de cámara. */
   isCheckingCamera: boolean;
+  /** Estado global del permiso de notificaciones push. */
+  notificationStatus: PermissionState;
+  /** true mientras se está consultando o solicitando notificaciones. */
+  isCheckingNotifications: boolean;
 }
 
 export interface PermissionsActions {
@@ -33,6 +43,12 @@ export interface PermissionsActions {
   refreshCameraPermission: () => Promise<void>;
   /** Solicita el permiso de cámara y actualiza el store. */
   requestCameraPermission: () => Promise<PermissionState>;
+  /** Refresca el estado del permiso de notificaciones. */
+  refreshNotificationPermission: () => Promise<void>;
+  /** Solicita el permiso de notificaciones y actualiza el store. */
+  requestNotificationPermission: () => Promise<PermissionState>;
+  /** Refresca todos los permisos gestionados por la app. */
+  refreshAllPermissions: () => Promise<void>;
 }
 
 const initialState: PermissionsState = {
@@ -40,10 +56,12 @@ const initialState: PermissionsState = {
   isCheckingLocation: false,
   cameraStatus: 'not-determined',
   isCheckingCamera: false,
+  notificationStatus: 'not-determined',
+  isCheckingNotifications: false,
 };
 
 export const usePermissionsStore = create<PermissionsState & PermissionsActions>(
-  (set) => ({
+  (set, get) => ({
     ...initialState,
 
     refreshLocationPermission: async () => {
@@ -79,8 +97,11 @@ export const usePermissionsStore = create<PermissionsState & PermissionsActions>
     refreshCameraPermission: async () => {
       set({ isCheckingCamera: true });
       try {
-        const status = await getCameraPermissionStatus();
-        const state = toPermissionStateFromCamera(status);
+        const detail = await getCameraPermissionDetail();
+        const state = toPermissionStateFromCamera(
+          detail.status,
+          detail.canAskAgain,
+        );
         set({ cameraStatus: state });
       } finally {
         set({ isCheckingCamera: false });
@@ -91,13 +112,62 @@ export const usePermissionsStore = create<PermissionsState & PermissionsActions>
       set({ isCheckingCamera: true });
       try {
         await requestCamera();
-        const status = await getCameraPermissionStatus();
-        const state = toPermissionStateFromCamera(status);
+        const detail = await getCameraPermissionDetail();
+        const state = toPermissionStateFromCamera(
+          detail.status,
+          detail.canAskAgain,
+        );
         set({ cameraStatus: state });
         return state;
       } finally {
         set({ isCheckingCamera: false });
       }
+    },
+
+    refreshNotificationPermission: async () => {
+      if (!isNotificationsModuleAvailable()) {
+        set({ notificationStatus: 'unavailable' });
+        return;
+      }
+      set({ isCheckingNotifications: true });
+      try {
+        const detail = await getNotificationPermissionDetail();
+        const state = toPermissionStateFromNotifications(
+          detail.status,
+          detail.canAskAgain,
+        );
+        set({ notificationStatus: state });
+      } finally {
+        set({ isCheckingNotifications: false });
+      }
+    },
+
+    requestNotificationPermission: async () => {
+      if (!isNotificationsModuleAvailable()) {
+        set({ notificationStatus: 'unavailable' });
+        return 'unavailable';
+      }
+      set({ isCheckingNotifications: true });
+      try {
+        await requestNotifications();
+        const detail = await getNotificationPermissionDetail();
+        const state = toPermissionStateFromNotifications(
+          detail.status,
+          detail.canAskAgain,
+        );
+        set({ notificationStatus: state });
+        return state;
+      } finally {
+        set({ isCheckingNotifications: false });
+      }
+    },
+
+    refreshAllPermissions: async () => {
+      await Promise.all([
+        get().refreshLocationPermission(),
+        get().refreshCameraPermission(),
+        get().refreshNotificationPermission(),
+      ]);
     },
   }),
 );

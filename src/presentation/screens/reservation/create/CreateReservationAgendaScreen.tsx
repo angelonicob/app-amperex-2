@@ -1,6 +1,6 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
-import { Layout } from '@ui-kitten/components';
+import { Layout, Text } from '@ui-kitten/components';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -16,6 +16,7 @@ import { useInfoDialog } from '../../../../shared/hooks/useInfoDialog';
 import { useSystemChrome } from '../../../../shared/hooks/useSystemChrome';
 import { useAppTheme } from '../../../../shared/theme/useAppTheme';
 import {
+  formatReservationDraftSummary,
   minutes24ToLocalIso,
   type ReservationWindowMinutes,
   validateReservationWindow,
@@ -75,7 +76,7 @@ export function CreateReservationAgendaScreen() {
 
   const handleConfirm = async () => {
     if (!draftWindow || !agenda || !dateKey) {
-      showInfo('Horario', 'Selecciona un horario en la agenda.');
+      showInfo('Horario', 'Tocá un horario libre en la agenda.');
       return;
     }
 
@@ -140,6 +141,11 @@ export function CreateReservationAgendaScreen() {
     return `Horario de estación: ${openAt} – ${closeAt}`;
   }, [agenda]);
 
+  const reservationSummary = useMemo(() => {
+    if (!draftWindow || !dateKey) return null;
+    return formatReservationDraftSummary(dateKey, draftWindow);
+  }, [dateKey, draftWindow]);
+
   return (
     <SafeAreaView
       style={[styles.flex1, { backgroundColor: screenBackground }]}
@@ -162,6 +168,19 @@ export function CreateReservationAgendaScreen() {
         />
 
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          {reservationSummary ? (
+            <View style={styles.reservationSummary}>
+              <Text category="c1" style={{ color: colors.textSecondary }}>
+                Tu reserva
+              </Text>
+              <Text
+                category="s1"
+                style={[styles.reservationSummaryValue, { color: colors.text }]}
+              >
+                {reservationSummary}
+              </Text>
+            </View>
+          ) : null}
           <ButtonPrimary
             title={submitting ? 'Reservando…' : 'Confirmar reserva'}
             onPress={() => void handleConfirm()}
@@ -181,6 +200,14 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
   },
-  confirmBtn: { marginTop: 4 },
+  reservationSummary: {
+    gap: 2,
+  },
+  reservationSummaryValue: {
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  confirmBtn: { marginTop: 0 },
 });

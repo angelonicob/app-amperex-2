@@ -1,14 +1,19 @@
 import { Input, Layout, Text } from '@ui-kitten/components';
 import { isAxiosError } from 'axios';
 import * as Application from 'expo-application';
-import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { ThemeMode, useThemeStore } from '../../shared/theme/store/useThemeStore';
 import { useAppTheme } from '../../shared/theme/useAppTheme';
 import { api } from '../../infrastructure/http/Api';
 import { ButtonPrimary, ButtonTransparent } from '../../shared/components/ui/button';
 import { ConfirmPopup } from '../../shared/components/ui/popup/ConfirmPopup';
 import { SectionLabel } from '../../shared/components/ui/SectionLabel';
+import { PermissionSettingsRow } from '../../shared/components/permissions/PermissionSettingsRow';
+import { PermissionPromptModal } from '../../shared/components/permissions/PermissionPromptModal';
+import { usePermissionsStore } from '../../modules/permissions/store/usePermissionsStore';
+import type { PermissionKind } from '../../modules/permissions/types';
+import { registerPushTokenIfGranted } from '../../modules/notifications/push';
 import { getFirebaseAuth } from '../../infrastructure/firebase/firebaseAuth';
 import {
   EmailAuthProvider,
@@ -37,6 +42,143 @@ export const SettingsScreen = () => {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
+  const [activePermissionPrompt, setActivePermissionPrompt] =
+    useState<PermissionKind | null>(null);
+
+  const locationStatus = usePermissionsStore((s) => s.locationStatus);
+  const cameraStatus = usePermissionsStore((s) => s.cameraStatus);
+  const notificationStatus = usePermissionsStore((s) => s.notificationStatus);
+  const isCheckingLocation = usePermissionsStore((s) => s.isCheckingLocation);
+  const isCheckingCamera = usePermissionsStore((s) => s.isCheckingCamera);
+  const isCheckingNotifications = usePermissionsStore(
+    (s) => s.isCheckingNotifications,
+  );
+  const refreshLocationPermission = usePermissionsStore(
+    (s) => s.refreshLocationPermission,
+  );
+  const refreshCameraPermission = usePermissionsStore(
+    (s) => s.refreshCameraPermission,
+  );
+  const refreshNotificationPermission = usePermissionsStore(
+    (s) => s.refreshNotificationPermission,
+  );
+  const requestLocationPermission = usePermissionsStore(
+    (s) => s.requestLocationPermission,
+  );
+  const requestCameraPermission = usePermissionsStore(
+    (s) => s.requestCameraPermission,
+  );
+  const requestNotificationPermission = usePermissionsStore(
+    (s) => s.requestNotificationPermission,
+  );
+
+  const permissionPromptConfig = useMemo(() => {
+    switch (activePermissionPrompt) {
+      case 'location':
+        return {
+          status: locationStatus,
+          disclaimerTitle: 'Ubicación',
+          title: 'Activar ubicación',
+          message:
+            'Permite el acceso a tu ubicación para centrar el mapa y ver estaciones cercanas.',
+          requestButtonText: 'Permitir ubicación',
+        };
+      case 'camera':
+        return {
+          status: cameraStatus,
+          disclaimerTitle: 'Cámara',
+          title: 'Activar cámara',
+          message:
+            'Permite el acceso a la cámara para escanear códigos QR en las estaciones.',
+          requestButtonText: 'Permitir cámara',
+        };
+      case 'notifications':
+        return {
+          status: notificationStatus,
+          disclaimerTitle: 'Notificaciones',
+          title: 'Activar notificaciones',
+          message:
+            'Recibe avisos sobre tus reservas y recordatorios de carga.',
+          requestButtonText: 'Activar notificaciones',
+        };
+      default:
+        return null;
+    }
+  }, [
+    activePermissionPrompt,
+    cameraStatus,
+    locationStatus,
+    notificationStatus,
+  ]);
+
+  const handlePermissionRowPress = useCallback(
+    (kind: PermissionKind) => {
+      const status =
+        kind === 'location'
+          ? locationStatus
+          : kind === 'camera'
+            ? cameraStatus
+            : notificationStatus;
+      if (status === 'granted' || status === 'blocked') {
+        void Linking.openSettings();
+        return;
+      }
+      setActivePermissionPrompt(kind);
+    },
+    [cameraStatus, locationStatus, notificationStatus],
+  );
+
+  const handlePermissionRequest = useCallback(async () => {
+    if (!activePermissionPrompt) return;
+    let state;
+    if (activePermissionPrompt === 'location') {
+      state = await requestLocationPermission();
+    } else if (activePermissionPrompt === 'camera') {
+      state = await requestCameraPermission();
+    } else {
+      state = await requestNotificationPermission();
+    }
+    if (state === 'granted') {
+      setActivePermissionPrompt(null);
+      if (activePermissionPrompt === 'notifications') {
+        await registerPushTokenIfGranted();
+      }
+    }
+  }, [
+    activePermissionPrompt,
+    requestCameraPermission,
+    requestLocationPermission,
+    requestNotificationPermission,
+  ]);
+
+  const handlePermissionRefresh = useCallback(async () => {
+    if (!activePermissionPrompt) return;
+    if (activePermissionPrompt === 'location') {
+      await refreshLocationPermission();
+    } else if (activePermissionPrompt === 'camera') {
+      await refreshCameraPermission();
+    } else {
+      await refreshNotificationPermission();
+    }
+    const store = usePermissionsStore.getState();
+    const state =
+      activePermissionPrompt === 'location'
+        ? store.locationStatus
+        : activePermissionPrompt === 'camera'
+          ? store.cameraStatus
+          : store.notificationStatus;
+    if (state === 'granted') {
+      setActivePermissionPrompt(null);
+      if (activePermissionPrompt === 'notifications') {
+        await registerPushTokenIfGranted();
+      }
+    }
+  }, [
+    activePermissionPrompt,
+    refreshCameraPermission,
+    refreshLocationPermission,
+    refreshNotificationPermission,
+  ]);
 
   const handleThemeChange = (mode: ThemeMode) => setThemeMode(mode);
 
@@ -170,6 +312,52 @@ export const SettingsScreen = () => {
           </View>
         </View>
 
+        <SectionLabel label="Permisos" bleedHorizontal={20} />
+        <Layout style={styles.section}>
+          <PermissionSettingsRow
+            title="Ubicación"
+            description="Centrar el mapa en tu posición y ver estaciones cercanas."
+            status={locationStatus}
+            isChecking={isCheckingLocation}
+            onPress={() => handlePermissionRowPress('location')}
+            onRefresh={() => void refreshLocationPermission()}
+          />
+          <PermissionSettingsRow
+            title="Cámara"
+            description="Escanear códigos QR para iniciar una sesión de carga."
+            status={cameraStatus}
+            isChecking={isCheckingCamera}
+            onPress={() => handlePermissionRowPress('camera')}
+            onRefresh={() => void refreshCameraPermission()}
+          />
+          <PermissionSettingsRow
+            title="Notificaciones"
+            description="Avisos sobre reservas y recordatorios de carga."
+            status={notificationStatus}
+            isChecking={isCheckingNotifications}
+            onPress={() => handlePermissionRowPress('notifications')}
+            onRefresh={() => void refreshNotificationPermission()}
+          />
+          <Layout
+            level="2"
+            style={[
+              styles.securityBlock,
+              {
+                borderColor: colors.border,
+                backgroundColor: securityBlockSurface,
+              },
+            ]}
+          >
+            <Text category="s2" style={{ color: colors.text }}>
+              Biometría
+            </Text>
+            <Text category="p2" style={{ color: colors.textSecondary }}>
+              Se solicita al confirmar pagos con One Click (Face ID o huella).
+              No se puede activar desde la app.
+            </Text>
+          </Layout>
+        </Layout>
+
         <SectionLabel label="Seguridad" bleedHorizontal={20} />
         <Layout style={styles.section}>
           <Layout
@@ -263,6 +451,20 @@ export const SettingsScreen = () => {
           {appVersionLabel}
         </Text>
       </ScrollView>
+
+      {permissionPromptConfig ? (
+        <PermissionPromptModal
+          visible={activePermissionPrompt != null}
+          status={permissionPromptConfig.status}
+          disclaimerTitle={permissionPromptConfig.disclaimerTitle}
+          title={permissionPromptConfig.title}
+          message={permissionPromptConfig.message}
+          requestButtonText={permissionPromptConfig.requestButtonText}
+          onRequest={handlePermissionRequest}
+          onRefresh={handlePermissionRefresh}
+          onClose={() => setActivePermissionPrompt(null)}
+        />
+      ) : null}
 
       <ConfirmPopup
         visible={deleteOpen}

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import axios from 'axios';
-import { loadMe } from '../../user/user';
+import { loadMe, updateMe } from '../../user/user';
 import { AuthStatus, ApiStatus } from '../auth.status';
 import { useStationStore } from '../../station/store/useStationStore';
 import { useAccountStore } from '../../user/store/useAccountStore';
 import { useUserStore } from '../../user/store/useUserStore';
 import { useActiveSessionStore } from '../../session/store/useActiveSessionStore';
-import { initPushNotifications } from '../../notifications/push';
+import { registerPushTokenIfGranted, resetPushRegistrationState } from '../../notifications/push';
 import { useNotificationsStore } from '../../notifications/store/useNotificationsStore';
 import { refreshAccessToken } from '../tokenLifecycle';
 import {
@@ -101,6 +101,8 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     showChecking?: boolean;
     /** true tras login/registro; evita omitir POST /auth/session por throttle local. */
     forceSessionSync?: boolean;
+    /** Tras alta en Firebase: persiste nombre/apellido en Postgres antes de loadMe. */
+    registerProfile?: { firstName: string; lastName: string };
   }): Promise<
     'success' | 'transport' | 'server' | 'auth' | 'no_token'
   > => {
@@ -141,6 +143,14 @@ export const useAuthStore = create<AuthState>()((set, get) => {
       }
     }
 
+    if (opts?.registerProfile) {
+      const { firstName, lastName } = opts.registerProfile;
+      const updated = await updateMe(undefined, firstName, lastName);
+      if (!updated && __DEV__) {
+        console.warn('[auth] PATCH user/me on register failed');
+      }
+    }
+
     const me = await loadMe();
 
     if (me.ok) {
@@ -155,7 +165,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         useStationStore.getState().fetchStations(),
         useNotificationsStore.getState().loadNotifications(),
       ]).catch(() => {});
-      initPushNotifications().catch(() => {});
+      registerPushTokenIfGranted().catch(() => {});
       return 'success';
     }
 
@@ -216,6 +226,14 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         const outcome = await finalizeBackendSession({
           showChecking: false,
           forceSessionSync: true,
+          ...(mode === 'register' && profile
+            ? {
+                registerProfile: {
+                  firstName: profile.firstName!.trim(),
+                  lastName: profile.lastName!.trim(),
+                },
+              }
+            : {}),
         });
 
         if (outcome === 'auth' || outcome === 'no_token') {
@@ -288,7 +306,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         await useAccountStore.getState().fetchVehicles();
         await useStationStore.getState().fetchStations();
         await useNotificationsStore.getState().loadNotifications();
-        initPushNotifications().catch(() => {});
+        registerPushTokenIfGranted().catch(() => {});
         set({
           isAuthenticated: 'authenticated',
           apiStatus: 'reachable',
@@ -317,6 +335,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
 
     logout() {
       resetBackendSessionSyncThrottle();
+      resetPushRegistrationState();
       void (async () => {
         await apiLogout();
         try {

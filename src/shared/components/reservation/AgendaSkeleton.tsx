@@ -9,7 +9,7 @@ export function AgendaSkeleton() {
   const bone = colors.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { backgroundColor: colors.background }]}>
       <View style={[styles.headerBone, { backgroundColor: bone }]} />
       {Array.from({ length: SKELETON_ROWS }).map((_, i) => (
         <View
@@ -22,7 +22,11 @@ export function AgendaSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingVertical: 8 },
+  wrap: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
   headerBone: {
     height: 20,
     borderRadius: 6,

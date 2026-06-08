@@ -10,35 +10,30 @@ import { usePermissionsStore } from './store/usePermissionsStore';
  * 3️⃣ blocked → PermissionBlocked (abrir configuración)
  * 4️⃣ granted → render normal
  *
- * - Al montar: refresca permisos de ubicación y cámara.
+ * - Al montar: refresca permisos de ubicación, cámara y notificaciones.
  * - Al volver la app a primer plano: vuelve a refrescar (p. ej. si el usuario
  *   fue a Ajustes y concedió o revocó algún permiso).
  */
 export function PermissionsProvider({ children }: PropsWithChildren) {
-  const refreshLocationPermission = usePermissionsStore(
-    (s) => s.refreshLocationPermission,
-  );
-  const refreshCameraPermission = usePermissionsStore(
-    (s) => s.refreshCameraPermission,
+  const refreshAllPermissions = usePermissionsStore(
+    (s) => s.refreshAllPermissions,
   );
 
   useEffect(() => {
-    refreshLocationPermission();
-    refreshCameraPermission();
-  }, [refreshLocationPermission, refreshCameraPermission]);
+    void refreshAllPermissions();
+  }, [refreshAllPermissions]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener(
       'change',
       (nextState: AppStateStatus) => {
         if (nextState === 'active') {
-          refreshLocationPermission();
-          refreshCameraPermission();
+          void refreshAllPermissions();
         }
       },
     );
     return () => subscription.remove();
-  }, [refreshLocationPermission, refreshCameraPermission]);
+  }, [refreshAllPermissions]);
 
   return <>{children}</>;
 }

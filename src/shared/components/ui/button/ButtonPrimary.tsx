@@ -1,13 +1,25 @@
-import { Button, Text } from '@ui-kitten/components';
-import type { TextProps } from '@ui-kitten/components/ui/text/text.component';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
+  Pressable,
   StyleSheet,
+  Text,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Animated, {
+  Easing,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useAppTheme } from '../../../theme/useAppTheme';
+import { buttonLabelStyles } from './buttonLabelStyles';
+
+const COLOR_TRANSITION_MS = 260;
+const PRESS_TRANSITION_MS = 90;
+const enterEasing = Easing.out(Easing.cubic);
 
 interface ButtonPrimaryProps {
   title: string;
@@ -23,68 +35,122 @@ export const ButtonPrimary = ({
   style,
 }: ButtonPrimaryProps) => {
   const theme = useAppTheme();
+  const activeProgress = useSharedValue(disabled ? 0 : 1);
+  const pressProgress = useSharedValue(0);
 
-  const handlePress = useCallback(() => {
-    if (!disabled) {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const disabledBackground = theme.textDisabled;
+  const activeBackground = theme.primary;
+  const pressedBackground = theme.primaryDark;
+
+  useEffect(() => {
+    activeProgress.value = withTiming(disabled ? 0 : 1, {
+      duration: COLOR_TRANSITION_MS,
+      easing: enterEasing,
+    });
+    if (disabled) {
+      pressProgress.value = 0;
     }
-    onPress();
-  }, [disabled, onPress]);
+  }, [activeBackground, activeProgress, disabled, disabledBackground, pressProgress]);
 
   const shadowStyle = useMemo(() => {
     if (theme.isDark) {
       return {
         shadowColor: theme.black,
-        shadowOpacity: 0.55,
-        shadowRadius: 10,
+        shadowRadius: 6,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
       } as const;
     }
     return {
       shadowColor: theme.black,
-      shadowOpacity: 0.34,
-      shadowRadius: 10,
+      shadowRadius: 6,
     } as const;
   }, [theme.black, theme.isDark]);
 
+  const animatedSurfaceStyle = useAnimatedStyle(() => {
+    const shadowOpacity =
+      theme.isDark
+        ? activeProgress.value * 0.55
+        : activeProgress.value * 0.34;
+
+    const baseBackground = interpolateColor(
+      activeProgress.value,
+      [0, 1],
+      [disabledBackground, activeBackground],
+    );
+
+    return {
+      backgroundColor: interpolateColor(
+        pressProgress.value,
+        [0, 1],
+        [baseBackground, pressedBackground],
+      ),
+      shadowOpacity,
+      elevation: activeProgress.value * 6,
+    };
+  }, [
+    activeBackground,
+    disabledBackground,
+    pressedBackground,
+    theme.isDark,
+  ]);
+
+  const handlePressIn = useCallback(() => {
+    if (disabled) {
+      return;
+    }
+    pressProgress.value = withTiming(1, {
+      duration: PRESS_TRANSITION_MS,
+      easing: enterEasing,
+    });
+  }, [disabled, pressProgress]);
+
+  const handlePressOut = useCallback(() => {
+    pressProgress.value = withTiming(0, {
+      duration: PRESS_TRANSITION_MS,
+      easing: enterEasing,
+    });
+  }, [pressProgress]);
+
+  const handlePress = useCallback(() => {
+    if (disabled) {
+      return;
+    }
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  }, [disabled, onPress]);
+
   return (
-    <Button
-      appearance="filled"
-      status="basic"
+    <Pressable
+      accessibilityRole="button"
       onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={disabled}
-      activeOpacity={0.88}
-      style={[
-        styles.base,
-        shadowStyle,
-        style,
-        { backgroundColor: theme.primary },
-      ]}
+      style={styles.wrapper}
     >
-      {(evaProps: TextProps) => (
-        <Text
-          {...evaProps}
-          style={[evaProps.style, styles.label]}
-        >
-          {title}
-        </Text>
-      )}
-    </Button>
+      <Animated.View
+        style={[styles.base, shadowStyle, animatedSurfaceStyle, style]}
+      >
+        <Text style={[buttonLabelStyles.label, styles.label]}>{title}</Text>
+      </Animated.View>
+    </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
+  wrapper: {
+    borderRadius: 12,
+  },
   base: {
     borderWidth: 0,
     borderColor: 'transparent',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   label: {
     color: '#FFFFFF',
-    fontWeight: '600',
   },
 });

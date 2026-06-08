@@ -1,3 +1,5 @@
+import * as Haptics from 'expo-haptics';
+import { useCallback } from 'react';
 import { StyleSheet, View, Pressable, ViewStyle } from 'react-native';
 import { Text } from '@ui-kitten/components';
 import Icon from '../../icons/Icon';
@@ -42,6 +44,12 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
 
   const statusLabel = isInactive ? 'Inactivo' : isOccupied ? 'Ocupado' : null;
 
+  const handleReservePress = useCallback(() => {
+    if (isInactive) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onReserve();
+  }, [isInactive, onReserve]);
+
   return (
     <View style={[styles.card, { backgroundColor: cardBg, borderColor }, style]}>
       <View style={styles.row1}>
@@ -76,18 +84,23 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
         )}
       </View>
       <Pressable
-        onPress={isInactive ? undefined : onReserve}
+        onPress={handleReservePress}
         disabled={isInactive}
-        style={[
+        style={({ pressed }) => [
           styles.reserveButton,
           {
-            backgroundColor: isInactive ? colors.textDisabled : colors.primary,
+            backgroundColor: isInactive
+              ? colors.textDisabled
+              : pressed
+                ? colors.primaryDark
+                : colors.primary,
             opacity: isInactive ? 0.6 : 1,
           },
         ]}
         android_ripple={
           isInactive ? undefined : { color: 'rgba(255,255,255,0.2)' }
         }
+        accessibilityRole="button"
         accessibilityState={{ disabled: isInactive }}
       >
         <Text style={[styles.reserveButtonText, { color: colors.background }]}>Reservar</Text>

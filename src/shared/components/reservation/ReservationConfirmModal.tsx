@@ -1,7 +1,6 @@
-import { Button, Layout, Text } from '@ui-kitten/components';
+import { Text } from '@ui-kitten/components';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 import {
   cancelReservation,
   confirmReservation,
@@ -11,7 +10,9 @@ import {
 import { useReservationConfirmStore } from '../../../modules/reservation/store/useReservationConfirmStore';
 import type { ReservationDetail } from '../../../modules/reservation/types';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { popupTemplateStyles, withPopupInsets } from '../ui/popup/popupStyles';
+import { ButtonPrimary, ButtonTransparent } from '../ui/button';
+import { PopupShell } from '../ui/popup/PopupShell';
+import { popupTemplateStyles } from '../ui/popup/popupStyles';
 
 function normalizeConfirmationBody(text: string): string {
   return text.replace(/\btolerancia\b/gi, 'espera');
@@ -20,21 +21,30 @@ function normalizeConfirmationBody(text: string): string {
 export const ReservationConfirmModal = () => {
   const reservationId = useReservationConfirmStore((s) => s.reservationId);
   const close = useReservationConfirmStore((s) => s.close);
-  const insets = useSafeAreaInsets();
   const theme = useAppTheme();
+  const [shellVisible, setShellVisible] = useState(false);
   const [detail, setDetail] = useState<ReservationDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const visible = reservationId != null;
+  const requestCloseShell = useCallback(() => {
+    setShellVisible(false);
+  }, []);
+
+  const handleDismissed = useCallback(() => {
+    close();
+    setDetail(null);
+    setError(null);
+    setLoading(false);
+    setActionLoading(false);
+  }, [close]);
 
   useEffect(() => {
     if (!reservationId) {
-      setDetail(null);
-      setError(null);
       return;
     }
+    setShellVisible(true);
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -60,26 +70,26 @@ export const ReservationConfirmModal = () => {
     setActionLoading(true);
     try {
       await confirmReservation(reservationId);
-      close();
+      requestCloseShell();
     } catch {
       setError('No se pudo confirmar. Inténtalo de nuevo.');
     } finally {
       setActionLoading(false);
     }
-  }, [reservationId, close]);
+  }, [reservationId, requestCloseShell]);
 
   const handleCancelReservation = useCallback(async () => {
     if (!reservationId) return;
     setActionLoading(true);
     try {
       await cancelReservation(reservationId);
-      close();
+      requestCloseShell();
     } catch {
       setError('No se pudo cancelar la reserva.');
     } finally {
       setActionLoading(false);
     }
-  }, [reservationId, close]);
+  }, [reservationId, requestCloseShell]);
 
   const title =
     detail?.confirmationCopy?.title ?? 'Confirma tu reserva';
@@ -99,87 +109,109 @@ export const ReservationConfirmModal = () => {
   const scheduleMutedColor = theme.isDark ? '#9A9A9A' : theme.textSecondary;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={close}
+    <PopupShell
+      visible={shellVisible}
+      onRequestClose={requestCloseShell}
+      onDismissed={handleDismissed}
+      title={title}
+      footer={
+        <View style={styles.actions}>
+          <ButtonPrimary
+            title={actionLoading ? '…' : 'Confirmar asistencia'}
+            onPress={() => void handleConfirm()}
+            disabled={loading || actionLoading}
+            style={styles.primaryBtn}
+          />
+          <ButtonTransparent
+            title="Cancelar reserva"
+            onPress={() => void handleCancelReservation()}
+            disabled={loading || actionLoading}
+            color={theme.danger}
+            style={styles.secondaryBtn}
+          />
+          <ButtonTransparent
+            title="Ahora no"
+            onPress={requestCloseShell}
+            disabled={actionLoading}
+            color={theme.primary}
+            style={styles.tertiaryBtn}
+          />
+        </View>
+      }
     >
-      <View style={[popupTemplateStyles.backdrop, withPopupInsets(insets)]}>
-        <Pressable onPress={() => {}} style={popupTemplateStyles.cardHitSlop}>
-          <Layout
-            level="2"
-            style={[popupTemplateStyles.sheet, { borderColor: theme.border }]}
-          >
-            <Text category="h5" style={popupTemplateStyles.title}>
-              {title}
+      <View
+        style={[styles.scheduleCard, { backgroundColor: scheduleCardBg }]}
+      >
+        {loading ? (
+          <>
+            <View
+              style={[
+                styles.skeletonLine,
+                styles.skeletonStation,
+                { backgroundColor: theme.border },
+              ]}
+            />
+            <View
+              style={[
+                styles.skeletonLine,
+                styles.skeletonTime,
+                { backgroundColor: theme.border },
+              ]}
+            />
+          </>
+        ) : timeRange ? (
+          <>
+            {stationName ? (
+              <Text
+                style={[styles.scheduleStation, { color: scheduleMutedColor }]}
+                numberOfLines={2}
+              >
+                {stationName}
+              </Text>
+            ) : null}
+            <Text style={[styles.scheduleTime, { color: scheduleMutedColor }]}>
+              {timeRange}
             </Text>
-            {loading ? (
-              <ActivityIndicator style={styles.loader} />
-            ) : (
-              <>
-                {timeRange ? (
-                  <View
-                    style={[styles.scheduleCard, { backgroundColor: scheduleCardBg }]}
-                  >
-                    {stationName ? (
-                      <Text
-                        style={[styles.scheduleStation, { color: scheduleMutedColor }]}
-                        numberOfLines={2}
-                      >
-                        {stationName}
-                      </Text>
-                    ) : null}
-                    <Text style={[styles.scheduleTime, { color: scheduleMutedColor }]}>
-                      {timeRange}
-                    </Text>
-                  </View>
-                ) : null}
-                <Text style={styles.body}>{body}</Text>
-                {error ? (
-                  <Text status="danger" style={styles.error}>
-                    {error}
-                  </Text>
-                ) : null}
-              </>
-            )}
-            <View style={styles.actions}>
-              <Button
-                appearance="filled"
-                style={styles.primaryBtn}
-                onPress={() => void handleConfirm()}
-                disabled={loading || actionLoading}
-              >
-                {actionLoading ? '…' : 'Confirmar asistencia'}
-              </Button>
-              <Button
-                appearance="ghost"
-                status="danger"
-                style={styles.secondaryBtn}
-                onPress={() => void handleCancelReservation()}
-                disabled={loading || actionLoading}
-              >
-                Cancelar reserva
-              </Button>
-              <Button
-                appearance="ghost"
-                style={styles.tertiaryBtn}
-                onPress={close}
-                disabled={actionLoading}
-              >
-                Ahora no
-              </Button>
-            </View>
-          </Layout>
-        </Pressable>
+          </>
+        ) : null}
       </View>
-    </Modal>
+      <View style={styles.bodyBlock}>
+        {loading ? (
+          <View style={styles.skeletonBody}>
+            <View
+              style={[styles.skeletonLine, { backgroundColor: theme.border }]}
+            />
+            <View
+              style={[
+                styles.skeletonLine,
+                styles.skeletonBodyMid,
+                { backgroundColor: theme.border },
+              ]}
+            />
+            <View
+              style={[
+                styles.skeletonLine,
+                styles.skeletonBodyShort,
+                { backgroundColor: theme.border },
+              ]}
+            />
+          </View>
+        ) : (
+          <>
+            <Text style={popupTemplateStyles.body}>{body}</Text>
+            {error ? (
+              <Text status="danger" style={styles.error}>
+                {error}
+              </Text>
+            ) : null}
+          </>
+        )}
+      </View>
+    </PopupShell>
   );
 };
 
 const styles = StyleSheet.create({
-  loader: { marginVertical: 24 },
   scheduleCard: {
     borderRadius: 12,
     paddingVertical: 16,
@@ -200,8 +232,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.5,
   },
-  body: { marginBottom: 16 },
-  error: { marginBottom: 8 },
+  bodyBlock: {
+    minHeight: 88,
+  },
+  skeletonBody: {
+    marginBottom: 20,
+    gap: 10,
+    alignItems: 'center',
+  },
+  skeletonLine: {
+    borderRadius: 6,
+    opacity: 0.45,
+  },
+  skeletonStation: {
+    width: '72%',
+    height: 14,
+  },
+  skeletonTime: {
+    width: '48%',
+    height: 28,
+    marginTop: 4,
+  },
+  skeletonBodyMid: {
+    width: '92%',
+    height: 12,
+  },
+  skeletonBodyShort: {
+    width: '64%',
+    height: 12,
+  },
+  error: { marginBottom: 8, textAlign: 'center' },
   actions: { gap: 10 },
   primaryBtn: { width: '100%' },
   secondaryBtn: { width: '100%' },

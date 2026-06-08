@@ -79,10 +79,13 @@ function useMapFloatingControlsInsets() {
 
 export interface StationsMapProps {
   hasLocationPermission: boolean;
+  /** Se invoca al pulsar "mi ubicación" sin permiso concedido. */
+  onMyLocationWithoutPermission?: () => void;
 }
 
 export interface StationsMapRef {
   selectStation: (stationId: string) => void;
+  centerOnMyLocation: () => Promise<void>;
 }
 
 function formatConnectorLabel(connector: Connector): string {
@@ -188,7 +191,7 @@ function StationSheetList({
 }
 
 function StationsMapComponent(
-  { hasLocationPermission }: StationsMapProps,
+  { hasLocationPermission, onMyLocationWithoutPermission }: StationsMapProps,
   ref: React.Ref<StationsMapRef>,
 ) {
   const colors = useAppTheme();
@@ -377,8 +380,6 @@ function StationsMapComponent(
     [stations, animateToStationCoords],
   );
 
-  useImperativeHandle(ref, () => ({ selectStation }), [selectStation]);
-
   const handleCenterOnMyLocation = useCallback(async () => {
     if (!hasLocationPermission || isLocating) return;
     const coords = await refreshUserLocation();
@@ -386,6 +387,19 @@ function StationsMapComponent(
       animateToStationCoords(coords.latitude, coords.longitude);
     }
   }, [hasLocationPermission, isLocating, refreshUserLocation, animateToStationCoords]);
+
+  useImperativeHandle(ref, () => ({
+    selectStation,
+    centerOnMyLocation: handleCenterOnMyLocation,
+  }), [selectStation, handleCenterOnMyLocation]);
+
+  const handleMyLocationPress = useCallback(() => {
+    if (hasLocationPermission) {
+      void handleCenterOnMyLocation();
+      return;
+    }
+    onMyLocationWithoutPermission?.();
+  }, [hasLocationPermission, handleCenterOnMyLocation, onMyLocationWithoutPermission]);
 
   const syncMapHeading = useCallback(async () => {
     try {
@@ -560,28 +574,26 @@ function StationsMapComponent(
           </Pressable>
         ) : null}
 
-        {hasLocationPermission ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Ir a mi ubicación"
-            hitSlop={8}
-            style={[
-              styles.mapFloatingButton,
-              {
-                right: mapFloatingInsets.right,
-                bottom: mapFloatingInsets.locationBottom,
-                backgroundColor: mapFloatingButtonBg,
-              },
-            ]}
-            onPress={() => void handleCenterOnMyLocation()}
-          >
-            {isLocating ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Icon name="location-crosshairs" size={22} color={colors.primary} iconStyle="solid" />
-            )}
-          </Pressable>
-        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ir a mi ubicación"
+          hitSlop={8}
+          style={[
+            styles.mapFloatingButton,
+            {
+              right: mapFloatingInsets.right,
+              bottom: mapFloatingInsets.locationBottom,
+              backgroundColor: mapFloatingButtonBg,
+            },
+          ]}
+          onPress={handleMyLocationPress}
+        >
+          {isLocating ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Icon name="location-crosshairs" size={22} color={colors.primary} iconStyle="solid" />
+          )}
+        </Pressable>
       </View>
 
       <View style={styles.bottomSheetWrapper} pointerEvents="box-none">

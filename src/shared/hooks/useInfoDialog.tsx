@@ -1,21 +1,20 @@
 import { useCallback, useRef, useState } from 'react';
 import { InfoPopup } from '../components/ui/popup/InfoPopup';
 
-type OpenState = {
-  open: true;
+type DialogContent = {
   title: string;
   message: string;
   buttonTitle?: string;
 };
 
-type DialogState = { open: false } | OpenState;
-
 /**
  * Diálogo informativo (un solo botón, p. ej. "Aceptar") basado en {@link InfoPopup}.
  */
 export function useInfoDialog() {
-  const [state, setState] = useState<DialogState>({ open: false });
+  const [visible, setVisible] = useState(false);
+  const [content, setContent] = useState<DialogContent | null>(null);
   const onAfterAcceptRef = useRef<(() => void) | undefined>(undefined);
+  const pendingAfterAcceptRef = useRef<(() => void) | undefined>(undefined);
 
   const showInfo = useCallback(
     (
@@ -24,33 +23,35 @@ export function useInfoDialog() {
       opts?: { buttonTitle?: string; onAfterAccept?: () => void },
     ) => {
       onAfterAcceptRef.current = opts?.onAfterAccept;
-      setState({
-        open: true,
-        title,
-        message,
-        buttonTitle: opts?.buttonTitle,
-      });
+      setContent({ title, message, buttonTitle: opts?.buttonTitle });
+      setVisible(true);
     },
     [],
   );
 
   const handleAccept = useCallback(() => {
-    const fn = onAfterAcceptRef.current;
+    pendingAfterAcceptRef.current = onAfterAcceptRef.current;
     onAfterAcceptRef.current = undefined;
-    setState({ open: false });
+    setVisible(false);
+  }, []);
+
+  const handleDismissed = useCallback(() => {
+    setContent(null);
+    const fn = pendingAfterAcceptRef.current;
+    pendingAfterAcceptRef.current = undefined;
     fn?.();
   }, []);
 
-  const InfoDialog =
-    state.open ? (
-      <InfoPopup
-        visible
-        title={state.title}
-        message={state.message}
-        buttonTitle={state.buttonTitle}
-        onAccept={handleAccept}
-      />
-    ) : null;
+  const InfoDialog = content ? (
+    <InfoPopup
+      visible={visible}
+      onDismissed={handleDismissed}
+      title={content.title}
+      message={content.message}
+      buttonTitle={content.buttonTitle}
+      onAccept={handleAccept}
+    />
+  ) : null;
 
   return { showInfo, InfoDialog };
 }

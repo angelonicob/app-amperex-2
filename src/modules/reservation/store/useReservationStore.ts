@@ -18,6 +18,8 @@ interface ReservationState {
   loadingList: boolean;
   agenda: ConnectorAgendaResponse | null;
   loadingAgenda: boolean;
+  /** Fecha de la solicitud de agenda en curso (descarta respuestas obsoletas). */
+  loadingAgendaForDate: string | null;
 
   loadReservations: () => Promise<void>;
   loadAgenda: (connectorId: string, date: string) => Promise<void>;
@@ -33,6 +35,7 @@ export const useReservationStore = create<ReservationState>((set, get) => ({
   loadingList: false,
   agenda: null,
   loadingAgenda: false,
+  loadingAgendaForDate: null,
 
   hasActiveReservation: () => {
     const a = get().activeReservation;
@@ -59,25 +62,30 @@ export const useReservationStore = create<ReservationState>((set, get) => ({
   },
 
   loadAgenda: async (connectorId, date) => {
-    set({ loadingAgenda: true, agenda: null });
+    set({ loadingAgenda: true, loadingAgendaForDate: date });
     try {
       const agenda = await fetchConnectorAgenda(
         connectorId,
         date,
         getDeviceTimezone(),
       );
+      if (get().loadingAgendaForDate !== date) return;
       set({ agenda });
     } catch (err) {
+      if (get().loadingAgendaForDate !== date) return;
       if (__DEV__) {
         console.warn('[reservation] loadAgenda failed', err);
       }
       throw err;
     } finally {
-      set({ loadingAgenda: false });
+      if (get().loadingAgendaForDate === date) {
+        set({ loadingAgenda: false, loadingAgendaForDate: null });
+      }
     }
   },
 
-  clearAgenda: () => set({ agenda: null }),
+  clearAgenda: () =>
+    set({ agenda: null, loadingAgenda: false, loadingAgendaForDate: null }),
 
   createReservation: async (payload) => {
     const created = await createReservation(payload);

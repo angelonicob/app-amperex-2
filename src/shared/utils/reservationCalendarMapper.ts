@@ -156,6 +156,42 @@ export function buildUnavailableHoursByDate(
   };
 }
 
+export function resolveEventLocalDateKey(
+  event: Pick<EventItem, 'start'>,
+): string | null {
+  const startDt = event.start?.dateTime;
+  if (!startDt) return null;
+  const start = new Date(startDt);
+  const y = start.getFullYear();
+  const mo = String(start.getMonth() + 1).padStart(2, '0');
+  const d = String(start.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${d}`;
+}
+
+/** Redondea minutos al inicio del bloque de agenda (p. ej. 30 min). */
+export function snapMinutes24ToSlot(
+  minutes24: number,
+  slotMinutes: number,
+): number {
+  return Math.floor(minutes24 / slotMinutes) * slotMinutes;
+}
+
+/** Ventana de reserva mínima al tocar un bloque horario. */
+export function windowFromTapDateTime(
+  dateTimeIso: string,
+  slotMinutes: number,
+): ReservationWindowMinutes {
+  const d = new Date(dateTimeIso);
+  const startMinutes24 = snapMinutes24ToSlot(
+    d.getHours() * 60 + d.getMinutes(),
+    slotMinutes,
+  );
+  return {
+    startMinutes24,
+    endMinutes24: startMinutes24 + slotMinutes,
+  };
+}
+
 export function calendarEventToWindowMinutes(
   event: Pick<EventItem, 'start' | 'end'>,
   dateKey: string,
@@ -164,10 +200,11 @@ export function calendarEventToWindowMinutes(
   const endDt = event.end.dateTime;
   if (!startDt || !endDt) return null;
 
+  const startKey = resolveEventLocalDateKey(event);
+  if (!startKey || startKey !== dateKey) return null;
+
   const start = new Date(startDt);
   const end = new Date(endDt);
-  const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
-  if (startKey !== dateKey) return null;
 
   return {
     startMinutes24: start.getHours() * 60 + start.getMinutes(),

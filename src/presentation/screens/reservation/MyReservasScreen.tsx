@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
-import { Button, Layout, Text } from '@ui-kitten/components';
+import { Layout, Text } from '@ui-kitten/components';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,6 +12,10 @@ import {
 import { useReservationStore } from '../../../modules/reservation/store/useReservationStore';
 import { useReservationConfirmStore } from '../../../modules/reservation/store/useReservationConfirmStore';
 import type { UserReservation } from '../../../modules/reservation/types';
+import {
+  ButtonPrimary,
+  ButtonTransparent,
+} from '../../../shared/components/ui/button';
 import Icon from '../../../shared/components/icons/Icon';
 import { EmptyStateLayout } from '../../../shared/components/layout/EmptyStateLayout';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
@@ -82,9 +86,9 @@ export const MyReservasScreen = () => {
   const handleCancel = (id: string) => {
     showConfirm({
       title: 'Cancelar reserva',
-      message: '¿Deseas cancelar esta reserva?',
-      labelConfirm: 'Cancelar',
-      labelCancel: 'No',
+      message: 'Al cancelar esta reserva, perderás tu reserva y no podrás recuperarla. ¿Estás seguro?',
+      labelConfirm: 'Si, cancelar',
+      labelCancel: 'Volver',
       confirmDestructive: true,
       onConfirm: async () => {
         setCancelling(true);
@@ -176,29 +180,24 @@ export const MyReservasScreen = () => {
                 {formatRange(activeReservation)}
               </Text>
               {!activeReservation.confirmedAt ? (
-                <Pressable
+                <ButtonPrimary
+                  title="Confirmar asistencia"
                   onPress={() => openConfirmModal(activeReservation.id)}
-                  style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '600' }}>
-                    Confirmar asistencia
-                  </Text>
-                </Pressable>
+                  style={styles.confirmBtn}
+                />
               ) : (
                 <Text category="c1" style={{ color: colors.textSecondary, marginTop: 12 }}>
                   Asistencia confirmada · {activeReservation.waitMinutes ?? 15} min de
                   espera al conectar
                 </Text>
               )}
-              <Button
-                appearance="ghost"
-                status="danger"
+              <ButtonTransparent
+                title={cancelling ? 'Cancelando…' : 'Cancelar reserva'}
                 onPress={() => handleCancel(activeReservation.id)}
                 disabled={cancelling}
+                color={colors.danger}
                 style={styles.cancelBtn}
-              >
-                {cancelling ? 'Cancelando…' : 'Cancelar reserva'}
-              </Button>
+              />
             </Layout>
           ) : null}
 

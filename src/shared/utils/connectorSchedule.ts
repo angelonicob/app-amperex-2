@@ -709,21 +709,41 @@ export function clampReservationWindow(
     return { startMinutes24: start, endMinutes24: end };
   }
 
-  for (let candidate = start; candidate <= endBounds.maxMinutes24; candidate += step) {
-    const candidateEnd = Math.max(
-      candidate + ctx.minReservationMinutes,
-      end,
-    );
-    if (
-      isReservationWindowValid(
-        ctx,
-        { startMinutes24: candidate, endMinutes24: candidateEnd },
-        options.currentUserId,
-      )
-    ) {
-      return { startMinutes24: candidate, endMinutes24: candidateEnd };
+  const targetStart = roundMinutes24ToStep(window.startMinutes24, step);
+  const duration = Math.max(
+    ctx.minReservationMinutes,
+    roundMinutes24ToStep(window.endMinutes24 - window.startMinutes24, step),
+  );
+  const lastStart = ctx.stationWindow.closeMinutes24 - ctx.minReservationMinutes;
+  const searchMin = Math.max(ctx.earliestBookableMinutes24, 0);
+  const maxDelta = lastStart - searchMin;
+
+  for (let delta = 0; delta <= maxDelta; delta += step) {
+    for (const candidate of [targetStart - delta, targetStart + delta]) {
+      if (candidate < searchMin || candidate > lastStart) continue;
+      const candidateEnd = Math.min(
+        roundMinutes24ToStep(candidate + duration, step),
+        ctx.stationWindow.closeMinutes24,
+      );
+      if (
+        isReservationWindowValid(
+          ctx,
+          { startMinutes24: candidate, endMinutes24: candidateEnd },
+          options.currentUserId,
+        )
+      ) {
+        return { startMinutes24: candidate, endMinutes24: candidateEnd };
+      }
     }
   }
+
+  const fallback = findFirstFreeReservationWindow(agenda, {
+    dateKey: options.dateKey,
+    currentUserId: options.currentUserId,
+    now: options.now,
+    stepMinutes: step,
+  });
+  if (fallback) return fallback;
 
   return {
     startMinutes24: Math.max(startBounds.minMinutes24, startBounds.maxMinutes24),
@@ -852,6 +872,23 @@ export function formatReservationWindowLabel(
   window: ReservationWindowMinutes,
 ): string {
   return `${formatMinutes24AsHhMm(window.startMinutes24)} – ${formatMinutes24AsHhMm(window.endMinutes24)}`;
+}
+
+export function formatReservationDayLabel(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString('es-CL', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+export function formatReservationDraftSummary(
+  dateKey: string,
+  window: ReservationWindowMinutes,
+): string {
+  return `${formatReservationDayLabel(dateKey)} · ${formatReservationWindowLabel(window)}`;
 }
 
 export {

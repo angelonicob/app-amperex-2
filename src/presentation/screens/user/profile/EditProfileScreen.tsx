@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { Button, Layout, Text } from '@ui-kitten/components';
+import { Layout, Text } from '@ui-kitten/components';
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -11,6 +11,7 @@ import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import type { ProfileFormStackParams } from '../../../routes/navigationParams';
 import { useUserStore } from '../../../../modules/user/store/useUserStore';
 import { ScreenBackHeader } from '../../../../shared/components/layout/ScreenBackHeader';
+import { ButtonPrimary } from '../../../../shared/components/ui/button';
 import { FormInput } from '../../../../shared/components/ui/form';
 import { useInfoDialog } from '../../../../shared/hooks/useInfoDialog';
 
@@ -125,14 +126,12 @@ export const EditProfileScreen = () => {
             textContentType="telephoneNumber"
             disabled={isPosting}
           />
-          <Button
-            status="primary"
-            onPress={onUpdate}
+          <ButtonPrimary
+            title={isPosting ? 'Guardando…' : 'Guardar'}
+            onPress={() => void onUpdate()}
             disabled={isPosting}
             style={styles.primaryButton}
-          >
-            Guardar
-          </Button>
+          />
         </GHScrollView>
       </KeyboardAvoidingView>
     </Layout>

@@ -4,7 +4,6 @@ import {
 } from '@react-navigation/drawer';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Button,
     Drawer,
     DrawerItem,
     IndexPath,
@@ -37,6 +36,9 @@ import {
   type PendingPaymentSession,
 } from '../../modules/session/pendingPayment';
 import { PendingPaymentGateModal } from '../../shared/components/ui/popup/PendingPaymentGateModal';
+import { NotificationsPermissionPrompt } from '../../shared/components/permissions/NotificationsPermissionPrompt';
+import { ButtonTransparent } from '../../shared/components/ui/button';
+import { useAppTheme } from '../../shared/theme/useAppTheme';
 import { navigateToSessionCompletion } from '../../shared/utils/navigateToSessionCompletion';
 const { Navigator, Screen } = createDrawerNavigator<DrawerHomeParams>();
 
@@ -77,6 +79,7 @@ const HomeContent = () => (
 
 const DrawerContent = ({ navigation, state }: DrawerContentComponentProps) => {
   const theme = useTheme();
+  const colors = useAppTheme();
   const { logout } = useAuthStore();
   const { user } = useUserStore();
 
@@ -155,14 +158,11 @@ const DrawerContent = ({ navigation, state }: DrawerContentComponentProps) => {
           ))}
         </Drawer>
         <Layout style={styles.logoutFooter}>
-          <Button
-            appearance="ghost"
-            status="danger"
-            accessoryLeft={createKittenFa6Icon('right-from-bracket')}
+          <ButtonTransparent
+            title="Cerrar sesión"
+            color={colors.danger}
             onPress={handleLogout}
-          >
-            Cerrar Sesión
-          </Button>
+          />
         </Layout>
       </View>
     </SafeAreaView>
@@ -263,6 +263,7 @@ export const DrawerHome = () => {
 
   return (
     <>
+    <NotificationsPermissionPrompt enabled={restoreState === 'done'} />
     <PendingPaymentGateModal
       visible={debtModalVisible}
       oldest={oldestDebt}

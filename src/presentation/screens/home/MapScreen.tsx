@@ -24,9 +24,7 @@ import { StationsMap, type StationsMapRef } from '../../../shared/components/map
 import { TAB_BAR_OVERLAY_HEIGHT } from '../../../shared/constants/layout';
 import Icon from '../../../shared/components/icons/Icon';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
-import { Disclaimer } from '../../../shared/components/permissions/Disclaimer';
-import { PermissionBlocked } from '../../../shared/components/permissions/PermissionBlocked';
-import { PermissionRequest } from '../../../shared/components/permissions/PermissionRequest';
+import { PermissionPromptModal } from '../../../shared/components/permissions/PermissionPromptModal';
 import type { BottomTabStackParams } from '../../routes/navigationParams';
 
 function formatNotificationDate(dateStr: string) {
@@ -53,6 +51,8 @@ export const MapScreen = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [locationPromptVisible, setLocationPromptVisible] = useState(false);
+  const centerAfterGrantRef = useRef(false);
 
   const {
     locationStatus,
@@ -131,6 +131,50 @@ export const MapScreen = () => {
     }, [route.params?.stationId, navigation]),
   );
 
+  const hasLocationPermission = locationStatus === 'granted';
+
+  const handleMyLocationWithoutPermission = useCallback(() => {
+    setLocationPromptVisible(true);
+  }, []);
+
+  const handleLocationPromptClose = useCallback(() => {
+    setLocationPromptVisible(false);
+    centerAfterGrantRef.current = false;
+  }, []);
+
+  const handleLocationRequest = useCallback(async () => {
+    centerAfterGrantRef.current = true;
+    const state = await requestLocationPermission();
+    if (state === 'granted') {
+      setLocationPromptVisible(false);
+      await mapRef.current?.centerOnMyLocation();
+      centerAfterGrantRef.current = false;
+      return;
+    }
+    if (state === 'blocked') {
+      setLocationPromptVisible(true);
+    }
+  }, [requestLocationPermission]);
+
+  const handleLocationRefresh = useCallback(async () => {
+    await refreshLocationPermission();
+    const state = usePermissionsStore.getState().locationStatus;
+    if (state === 'granted') {
+      setLocationPromptVisible(false);
+      if (centerAfterGrantRef.current) {
+        await mapRef.current?.centerOnMyLocation();
+        centerAfterGrantRef.current = false;
+      }
+    }
+  }, [refreshLocationPermission]);
+
+  useEffect(() => {
+    if (hasLocationPermission && centerAfterGrantRef.current) {
+      centerAfterGrantRef.current = false;
+      void mapRef.current?.centerOnMyLocation();
+    }
+  }, [hasLocationPermission]);
+
   const renderNotificationItem = useCallback(
     ({ item }: { item: Notification }) => (
       <View
@@ -169,51 +213,26 @@ export const MapScreen = () => {
     [colors, markAsRead, removeNotification],
   );
 
-  if (locationStatus === 'not-determined') {
-    return (
-      <Layout level="1" style={styles.container}>
-        <Disclaimer
-          title="Ubicación para el mapa"
-          message="Necesitamos tu ubicación para mostrar estaciones cercanas."
-          buttonText="Continuar"
-          onConfirm={() => requestLocationPermission()}
-          onClose={() => refreshLocationPermission()}
-        />
-      </Layout>
-    );
-  }
-
-  if (locationStatus === 'requestable') {
-    return (
-      <Layout level="1" style={styles.container}>
-        <PermissionRequest
-          title="Ubicación necesaria"
-          message="La ubicación es necesaria para usar el mapa."
-          screenName="Mapa"
-          onRequest={requestLocationPermission}
-          onClose={() => refreshLocationPermission()}
-          buttonText="Permitir ubicación"
-        />
-      </Layout>
-    );
-  }
-
-  if (locationStatus === 'blocked' || locationStatus === 'unavailable') {
-    return (
-      <Layout level="1" style={styles.container}>
-        <PermissionBlocked
-          title="Permiso bloqueado"
-          message="Has bloqueado el permiso de ubicación. Para usar esta función debes habilitarlo en configuración."
-          screenName="Mapa"
-          onRefresh={() => refreshLocationPermission()}
-        />
-      </Layout>
-    );
-  }
-
   return (
     <Layout level="1" style={styles.container}>
-      <StationsMap ref={mapRef} hasLocationPermission={locationStatus === 'granted'} />
+      <StationsMap
+        ref={mapRef}
+        hasLocationPermission={hasLocationPermission}
+        onMyLocationWithoutPermission={handleMyLocationWithoutPermission}
+      />
+
+      <PermissionPromptModal
+        visible={locationPromptVisible}
+        status={locationStatus}
+        disclaimerTitle="Ubicación para el mapa"
+        title="Ubicación necesaria"
+        message="Necesitamos tu ubicación para centrar el mapa en tu posición y mostrarte estaciones cercanas."
+        screenName="Mapa"
+        requestButtonText="Permitir ubicación"
+        onRequest={handleLocationRequest}
+        onRefresh={handleLocationRefresh}
+        onClose={handleLocationPromptClose}
+      />
 
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <Pressable

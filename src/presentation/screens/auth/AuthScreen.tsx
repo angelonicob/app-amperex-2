@@ -26,6 +26,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ButtonPrimary,
+  ButtonFrosted,
   ButtonTransparent,
 } from '../../../shared/components/ui/button';
 import { LabelWarning } from '../../../shared/components/ui/card';
@@ -298,13 +299,13 @@ export const AuthScreen = () => {
 
   const formTitle =
     authMode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta';
-  const formSubtitle = 'Ingresa tus datos aqui abajo';
+  const formSubtitle = 'Ingresa tus datos a continuación';
   const primaryLabel =
     isPosting
-      ? 'Conectando…'
+      ? 'Iniciando sesión…'
       : authMode === 'signin'
         ? 'Iniciar sesión'
-        : 'Crear cuenta';
+        : 'Registrarme';
 
   return (
     <ImageBackground
@@ -340,7 +341,7 @@ export const AuthScreen = () => {
                 ? '¿Ya tienes una cuenta?'
                 : '¿Aún no tienes una cuenta?'}
             </Text>
-            <ButtonTransparent
+            <ButtonFrosted
               title={
                 authMode === 'signin' ? 'Registrarme' : 'Iniciar sesión'
               }
@@ -423,22 +424,12 @@ export const AuthScreen = () => {
                     disabled={isSendingReset}
                     style={[styles.primaryBtn, styles.primaryBtnAboveLink]}
                   />
-                  <Pressable
+                  <ButtonTransparent
+                    title="Volver a iniciar sesión"
                     onPress={backToSignInForm}
-                    style={({ pressed }) => [
-                      styles.secondaryLinkWrap,
-                      pressed && styles.secondaryLinkPressed,
-                    ]}
                     disabled={isSendingReset}
-                  >
-                    <Text
-                      category="s1"
-                      appearance="hint"
-                      style={styles.secondaryLink}
-                    >
-                      Volver a iniciar sesión
-                    </Text>
-                  </Pressable>
+                    style={styles.secondaryLinkWrap}
+                  />
                 </View>
                 <View
                   style={[
@@ -616,6 +607,7 @@ const styles = StyleSheet.create({
   heroQuestion: {
     color: '#fff',
     marginTop: 10,
+    marginBottom: 8,
     textAlign: 'center',
     opacity: 0.95,
   },
@@ -695,12 +687,8 @@ const styles = StyleSheet.create({
   secondaryLinkWrap: {
     alignSelf: 'center',
     marginTop: 4,
-    paddingVertical: 4,
   },
   secondaryLinkPressed: {
     opacity: 0.75,
-  },
-  secondaryLink: {
-    textAlign: 'center',
   },
 });

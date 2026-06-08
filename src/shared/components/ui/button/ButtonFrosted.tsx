@@ -5,39 +5,44 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { lightColors } from '../../../theme/config/colors';
 import { buttonLabelStyles } from './buttonLabelStyles';
 
-const PRIMARY = lightColors.primary;
+const FROSTED_BG = 'rgba(255, 255, 255, 0.18)';
+const FROSTED_BG_PRESSED = 'rgba(255, 255, 255, 0.28)';
+const FROSTED_BG_DISABLED = 'rgba(255, 255, 255, 0.1)';
 
-interface ButtonTransparentProps {
+interface ButtonFrostedProps {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
-  /** Color del texto. Por defecto: primary de la app. */
-  color?: string;
 }
 
-export const ButtonTransparent = ({
+export const ButtonFrosted = ({
   title,
   onPress,
   style,
   disabled = false,
-  color = PRIMARY,
-}: ButtonTransparentProps) => (
+}: ButtonFrostedProps) => (
   <Pressable
     accessibilityRole="button"
     onPress={onPress}
     disabled={disabled}
     style={({ pressed }) => [
       styles.base,
+      {
+        backgroundColor: disabled
+          ? FROSTED_BG_DISABLED
+          : pressed
+            ? FROSTED_BG_PRESSED
+            : FROSTED_BG,
+      },
       style,
-      disabled && styles.disabled,
-      pressed && !disabled && styles.pressed,
     ]}
   >
-    <Text style={[buttonLabelStyles.label, { color }]}>{title}</Text>
+    <Text style={[buttonLabelStyles.label, styles.label, disabled && buttonLabelStyles.labelDisabled]}>
+      {title}
+    </Text>
   </Pressable>
 );
 
@@ -47,12 +52,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     borderRadius: 10,
     alignItems: 'center',
-    backgroundColor: 'transparent',
   },
-  disabled: {
-    opacity: 0.55,
-  },
-  pressed: {
-    opacity: 0.7,
+  label: {
+    color: '#FFFFFF',
   },
 });
