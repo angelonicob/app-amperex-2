@@ -17,6 +17,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 import { setupApiAuth } from './src/infrastructure/http/setupApiAuth';
+import { configurePushNotificationHandler } from './src/modules/notifications/push';
 import { PermissionsProvider } from './src/modules/permissions/PermissionsProvider';
 import {
   flushPendingNavigation,
@@ -33,6 +34,7 @@ import {
 } from './src/shared/theme/themes/customTheme';
 
 setupApiAuth();
+configurePushNotificationHandler();
 
 export default function App() {
   const loadThemeFromStorage = useThemeStore(state => state.loadThemeFromStorage);

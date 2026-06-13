@@ -7,6 +7,8 @@ export type InfoPopupProps = {
   visible: boolean;
   title: string;
   message: string;
+  /** Texto secundario (tipografía más pequeña). */
+  hint?: string;
   /** Texto del botón principal (p. ej. "Aceptar"). */
   buttonTitle?: string;
   /** Al pulsar: cerrar modal y reactivar el escáner (lo invoca la pantalla). */
@@ -22,6 +24,7 @@ export const InfoPopup = ({
   visible,
   title,
   message,
+  hint,
   buttonTitle = 'Aceptar',
   onAccept,
   onDismissed,
@@ -42,5 +45,10 @@ export const InfoPopup = ({
     <Text category="s1" appearance="hint" style={popupTemplateStyles.body}>
       {message}
     </Text>
+    {hint ? (
+      <Text category="c2" appearance="hint" style={popupTemplateStyles.hint}>
+        {hint}
+      </Text>
+    ) : null}
   </PopupShell>
 );

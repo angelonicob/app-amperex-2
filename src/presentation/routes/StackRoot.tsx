@@ -2,6 +2,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { RootStackParams } from './navigationParams';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { PasswordResetSuccessScreen } from '../screens/auth/PasswordResetSuccessScreen';
+import { LegalDocumentScreen } from '../screens/legal/LegalDocumentScreen';
 import { LoadingGateScreen } from '../screens/LoadingGateScreen';
 import { OfflineScreen } from '../screens/offline/OfflineScreen';
 import { BackendErrorScreen } from '../screens/offline/BackendErrorScreen';
@@ -31,6 +32,7 @@ export const StackRoot = () => {
         name="PasswordResetSuccess"
         component={PasswordResetSuccessScreen}
       />
+      <Stack.Screen name="LegalDocument" component={LegalDocumentScreen} />
     </Stack.Navigator>
   );
 };

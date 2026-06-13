@@ -56,7 +56,18 @@ export function createWebSocketClient(config: WebSocketClientConfig) {
   let callbacks: WebSocketClientCallbacks = {};
 
   function connect() {
-    if (ws?.readyState === WebSocket.OPEN) return;
+    if (ws) {
+      const state = ws.readyState;
+      if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
+        return;
+      }
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      ws = null;
+    }
 
     try {
       const url = getUrl();

@@ -11,7 +11,7 @@ import { ScanQrResponse } from '../scanQr';
 
 export interface ChargingData {
   sessionId?: string;
-  status?: 'CHARGING' | 'STOPPING' | 'FINISHED';
+  status?: 'CHARGING' | 'STOPPING' | 'FINISHED' | 'FAILED';
   ocppTransactionId?: number;
   startedAt?: string;
   meterStart?: number;
@@ -41,8 +41,9 @@ export interface ChargingData {
   // Permiten mostrarlos en SessionChargeScreen sin pedirlos al backend.
   mode?: ChargingMode;
   departureTime?: string; // ISO 8601
-  /** Del WS al finalizar: false en estaciones privadas (sin cobro). */
+  /** Del WS al finalizar: false si no aplica cobro One Click. */
   paymentRequired?: boolean;
+  noPaymentReason?: 'ZERO_ENERGY' | 'PRIVATE_STATION';
 }
 
 /** Referencia opcional a una conexión (legacy). El flujo actual usa useSessionWebSocket (WebSocket nativo). */

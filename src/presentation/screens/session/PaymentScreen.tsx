@@ -1,5 +1,5 @@
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Layout } from '@ui-kitten/components';
 import {
   ActivityIndicator,
@@ -9,10 +9,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   authorizePayment,
-  getInscriptionStatus,
+  getCards,
+  type OneClickCard,
 } from '../../../modules/session/oneclick';
 import {
   getPaymentSummary,
@@ -29,6 +30,18 @@ import { requireBiometricForPayment } from '../../../shared/utils/biometricGuard
 import { runOneClickInscriptionFlow } from '../../../shared/utils/oneclickInscription';
 import { SessionCompletionSummary } from '../../../shared/components/session/SessionCompletionSummary';
 import { useNavigation } from '@react-navigation/native';
+import { ButtonPrimary } from '../../../shared/components/ui/button';
+import { ConfirmPopup } from '../../../shared/components/ui/popup/ConfirmPopup';
+import { PopupShell } from '../../../shared/components/ui/popup/PopupShell';
+import Icon from '../../../shared/components/icons/Icon';
+import { classifyApiFailure } from '../../../infrastructure/http/apiErrorKind';
+import {
+  INSCRIPTION_CANCELLED_MESSAGE,
+  INSCRIPTION_CONFIRM,
+  INSCRIPTION_UNKNOWN_MESSAGE,
+  messageForAuthorizeError,
+  messageForInscriptionStartError,
+} from '../../../shared/utils/paymentErrors';
 
 type Nav = StackNavigationProp<SessionStackParams, 'Pago'>;
 
@@ -66,15 +79,36 @@ function summaryFromChargingData(
   };
 }
 
+function prettyCardMeta(card: OneClickCard): string {
+  const last4 = card.cardLast4 ? `****${card.cardLast4}` : 'Tarjeta';
+  const type = card.cardType ? ` (${card.cardType})` : '';
+  return `${last4}${type}`;
+}
+
+function prettyCardTitle(card: OneClickCard): string {
+  const name = card.displayName?.trim();
+  if (name) return name;
+  return prettyCardMeta(card);
+}
+
+function pickInitialCardId(cards: OneClickCard[]): string | null {
+  if (cards.length === 0) return null;
+  const defaultCard = cards.find((card) => card.isDefault);
+  return defaultCard?.id ?? cards[0].id;
+}
+
 export const PaymentScreen = () => {
   const navigation = useNavigation<Nav>();
   const colors = useAppTheme();
   const screenBackground = useSystemChrome();
+  const insets = useSafeAreaInsets();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [oneClickEnrolled, setOneClickEnrolled] = useState(false);
-  const [oneClickCardLast4, setOneClickCardLast4] = useState<string | null>(null);
-  const [oneClickCardType, setOneClickCardType] = useState<string | null>(null);
-  const [loadingInscription, setLoadingInscription] = useState(true);
+  const [cards, setCards] = useState<OneClickCard[]>([]);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [cardPickerVisible, setCardPickerVisible] = useState(false);
+  const [inscriptionConfirmVisible, setInscriptionConfirmVisible] =
+    useState(false);
+  const [loadingCards, setLoadingCards] = useState(true);
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pendingContext = usePendingPaymentStore((s) => s.context);
@@ -84,6 +118,13 @@ export const PaymentScreen = () => {
   const { showInfo, InfoDialog } = useInfoDialog();
 
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
+
+  const hasEnrolledCards = cards.length > 0;
+
+  const selectedCard = useMemo(
+    () => cards.find((card) => card.id === selectedCardId) ?? null,
+    [cards, selectedCardId],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -126,25 +167,32 @@ export const PaymentScreen = () => {
     };
   }, [pendingContext, chargingData, setPendingContext, navigation]);
 
-  const refreshInscriptionStatus = useCallback(async () => {
-    setLoadingInscription(true);
+  const refreshCards = useCallback(async () => {
+    setLoadingCards(true);
     try {
-      const status = await getInscriptionStatus();
-      setOneClickEnrolled(status.enrolled);
-      setOneClickCardLast4(status.cardLast4 ?? null);
-      setOneClickCardType(status.cardType ?? null);
+      const res = await getCards();
+      const nextCards = res.cards ?? [];
+      setCards(nextCards);
+      setSelectedCardId((prev) => {
+        if (prev && nextCards.some((card) => card.id === prev)) return prev;
+        return pickInitialCardId(nextCards);
+      });
     } catch {
-      setOneClickEnrolled(false);
-      setOneClickCardLast4(null);
-      setOneClickCardType(null);
+      setCards([]);
+      setSelectedCardId(null);
     } finally {
-      setLoadingInscription(false);
+      setLoadingCards(false);
     }
   }, []);
 
   useEffect(() => {
-    refreshInscriptionStatus();
-  }, [refreshInscriptionStatus]);
+    void refreshCards();
+  }, [refreshCards]);
+
+  const handleSelectCard = (cardId: string) => {
+    setSelectedCardId(cardId);
+    setCardPickerVisible(false);
+  };
 
   const handlePayWithOneClick = async () => {
     // Fix #1.3 (UI): cortar reentradas antes de que React re-renderice y
@@ -153,6 +201,10 @@ export const PaymentScreen = () => {
     if (isProcessing) return;
     if (!summary?.sessionId) {
       showInfo('Error', 'Información de pago no disponible');
+      return;
+    }
+    if (!selectedCardId) {
+      showInfo('Error', 'Selecciona una tarjeta para continuar');
       return;
     }
     setIsProcessing(true);
@@ -179,7 +231,7 @@ export const PaymentScreen = () => {
         return;
       }
 
-      await authorizePayment(summary.sessionId);
+      await authorizePayment(summary.sessionId, selectedCardId);
       showInfo('Éxito', 'Pago con One Click realizado correctamente.', {
         buttonTitle: 'OK',
         onAfterAccept: () => {
@@ -189,15 +241,14 @@ export const PaymentScreen = () => {
         },
       });
     } catch (err: unknown) {
-      const message =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data
-              ?.message
-          : null;
-      showInfo(
-        'Error',
-        message ?? 'No se pudo procesar el pago con One Click. Intenta de nuevo.',
-      );
+      const msg = messageForAuthorizeError(err);
+      showInfo(msg.title, msg.body, {
+        onAfterAccept: () => {
+          if (msg.suggestOtherCard && cards.length > 1) {
+            setCardPickerVisible(true);
+          }
+        },
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -214,7 +265,7 @@ export const PaymentScreen = () => {
       const outcome = await runOneClickInscriptionFlow();
       switch (outcome.kind) {
         case 'success':
-          await refreshInscriptionStatus();
+          await refreshCards();
           return;
         case 'failed': {
           const { code } = outcome;
@@ -224,30 +275,27 @@ export const PaymentScreen = () => {
               ? `La inscripción fue rechazada (código ${code}). Intenta nuevamente o usa otra tarjeta.`
               : 'La inscripción fue rechazada. Intenta nuevamente o usa otra tarjeta.',
           );
-          await refreshInscriptionStatus();
+          await refreshCards();
           return;
         }
         case 'cancelled':
+          showInfo(
+            INSCRIPTION_CANCELLED_MESSAGE.title,
+            INSCRIPTION_CANCELLED_MESSAGE.body,
+          );
           return;
         case 'unknown':
         default:
           showInfo(
-            'Error',
-            'No se pudo confirmar el resultado de la inscripción. Verifica si tu tarjeta quedó registrada y, si no, inténtalo nuevamente.',
+            INSCRIPTION_UNKNOWN_MESSAGE.title,
+            INSCRIPTION_UNKNOWN_MESSAGE.body,
           );
-          await refreshInscriptionStatus();
+          await refreshCards();
           return;
       }
     } catch (err: unknown) {
-      const message =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data
-              ?.message
-          : null;
-      showInfo(
-        'Error',
-        message ?? 'No se pudo iniciar la inscripción. Intenta de nuevo.',
-      );
+      const msg = messageForInscriptionStartError(err);
+      showInfo(msg.title, msg.body);
     } finally {
       setIsProcessing(false);
     }
@@ -271,8 +319,13 @@ export const PaymentScreen = () => {
       }
       setSummary(loaded);
       setPendingContext(loaded);
-    } catch {
-      setLoadError('No se pudo cargar el resumen de pago');
+    } catch (err: unknown) {
+      const kind = classifyApiFailure(err);
+      setLoadError(
+        kind === 'transport'
+          ? 'Sin conexión. Revisa tu red e inténtalo de nuevo.'
+          : 'No se pudo cargar el resumen de pago',
+      );
     } finally {
       setLoadingSummary(false);
     }
@@ -330,7 +383,7 @@ export const PaymentScreen = () => {
     <Fragment>
       <SafeAreaView
         style={[styles.flex1, { backgroundColor: screenBackground }]}
-        edges={['top', 'bottom']}
+        edges={['top']}
       >
         <Layout level="1" style={styles.flex1}>
           <ScrollView
@@ -348,55 +401,179 @@ export const PaymentScreen = () => {
             </Text>
 
             <SessionCompletionSummary summary={summary} showAmount />
+          </ScrollView>
 
-            {!loadingInscription && (
-              <>
-                {oneClickEnrolled ? (
-                  <>
-                    {oneClickCardLast4 != null && (
-                      <Text style={[styles.cardHint, { color: colors.textSecondary }]}>
-                        Tarjeta ****{oneClickCardLast4}
-                        {oneClickCardType != null ? ` (${oneClickCardType})` : ''}
-                      </Text>
-                    )}
+          {!loadingCards ? (
+            <View
+              style={[
+                styles.footer,
+                {
+                  borderTopColor: colors.border,
+                  backgroundColor: screenBackground,
+                  paddingBottom: insets.bottom + 16,
+                },
+              ]}
+            >
+              {hasEnrolledCards ? (
+                <>
+                  <View style={styles.cardSelectBlock}>
+                    <Text style={[styles.cardSelectLabel, { color: colors.textSecondary }]}>
+                      Tarjeta de pago
+                    </Text>
                     <Pressable
-                      onPress={handlePayWithOneClick}
+                      onPress={() => setCardPickerVisible(true)}
                       disabled={isProcessing}
                       style={({ pressed }) => [
-                        styles.primaryButton,
+                        styles.cardSelectTrigger,
                         {
-                          backgroundColor: colors.primary,
-                          opacity: isProcessing || pressed ? 0.8 : 1,
+                          borderColor: colors.border,
+                          backgroundColor: colors.background,
+                          opacity: isProcessing ? 0.6 : pressed ? 0.85 : 1,
                         },
                       ]}
                     >
-                      <Text style={styles.primaryButtonText}>
-                        {isProcessing ? 'Procesando...' : 'Pagar con One Click'}
-                      </Text>
+                      <View style={styles.cardSelectIconWrap}>
+                        <Icon
+                          name="credit-card"
+                          size={18}
+                          color={colors.primary}
+                          iconStyle="solid"
+                        />
+                      </View>
+                      <View style={styles.cardSelectTextWrap}>
+                        <Text
+                          style={[styles.cardSelectTitle, { color: colors.text }]}
+                          numberOfLines={1}
+                        >
+                          {selectedCard
+                            ? prettyCardTitle(selectedCard)
+                            : 'Seleccionar tarjeta'}
+                        </Text>
+                        {selectedCard ? (
+                          <Text
+                            style={[styles.cardSelectMeta, { color: colors.textSecondary }]}
+                            numberOfLines={1}
+                          >
+                            {prettyCardMeta(selectedCard)}
+                            {selectedCard.isDefault ? ' · Predeterminada' : ''}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Icon
+                        name="chevron-down"
+                        size={14}
+                        color={colors.textSecondary}
+                        iconStyle="solid"
+                      />
                     </Pressable>
-                  </>
-                ) : (
-                  <Pressable
-                    onPress={handleStartInscription}
-                    disabled={isProcessing}
-                    style={({ pressed }) => [
-                      styles.primaryButton,
-                      {
-                        backgroundColor: colors.primary,
-                        opacity: isProcessing || pressed ? 0.8 : 1,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.primaryButtonText}>
-                      {isProcessing ? 'Procesando...' : 'Inscribir tarjeta One Click'}
-                    </Text>
-                  </Pressable>
-                )}
-              </>
-            )}
-          </ScrollView>
+                  </View>
+                  <ButtonPrimary
+                    title={isProcessing ? 'Procesando...' : 'Pagar con One Click'}
+                    onPress={() => void handlePayWithOneClick()}
+                    disabled={isProcessing || selectedCardId == null}
+                  />
+                </>
+              ) : (
+                <ButtonPrimary
+                  title={isProcessing ? 'Procesando...' : 'Inscribir tarjeta One Click'}
+                  onPress={() => setInscriptionConfirmVisible(true)}
+                  disabled={isProcessing}
+                />
+              )}
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.footer,
+                styles.footerLoading,
+                {
+                  borderTopColor: colors.border,
+                  backgroundColor: screenBackground,
+                  paddingBottom: insets.bottom + 16,
+                },
+              ]}
+            >
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          )}
         </Layout>
       </SafeAreaView>
+
+      <ConfirmPopup
+        visible={inscriptionConfirmVisible}
+        onRequestClose={() => setInscriptionConfirmVisible(false)}
+        title={INSCRIPTION_CONFIRM.title}
+        labelConfirm={INSCRIPTION_CONFIRM.labelConfirm}
+        loading={isProcessing}
+        onConfirm={() => {
+          setInscriptionConfirmVisible(false);
+          void handleStartInscription();
+        }}
+      >
+        <Text style={{ color: colors.textSecondary }}>{INSCRIPTION_CONFIRM.body}</Text>
+      </ConfirmPopup>
+
+      <PopupShell
+        visible={cardPickerVisible}
+        onRequestClose={() => setCardPickerVisible(false)}
+        title="Seleccionar tarjeta"
+      >
+        <View style={styles.cardPickerList}>
+          {cards.map((card) => {
+            const isSelected = card.id === selectedCardId;
+            return (
+              <Pressable
+                key={card.id}
+                onPress={() => handleSelectCard(card.id)}
+                style={({ pressed }) => [
+                  styles.cardPickerRow,
+                  {
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    backgroundColor: isSelected
+                      ? colors.isDark
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'rgba(0,0,0,0.03)'
+                      : colors.background,
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <View style={styles.cardPickerRowText}>
+                  <Text
+                    style={[styles.cardPickerTitle, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
+                    {prettyCardTitle(card)}
+                  </Text>
+                  <Text
+                    style={[styles.cardPickerMeta, { color: colors.textSecondary }]}
+                    numberOfLines={1}
+                  >
+                    {prettyCardMeta(card)}
+                    {card.isDefault ? ' · Predeterminada' : ''}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.cardPickerCheck,
+                    isSelected
+                      ? { backgroundColor: colors.primary }
+                      : { backgroundColor: colors.backgroundTertiary },
+                  ]}
+                >
+                  <Icon
+                    name={isSelected ? 'check' : 'circle'}
+                    size={isSelected ? 14 : 16}
+                    color={isSelected ? colors.white : colors.textDisabled}
+                    iconStyle={isSelected ? 'solid' : 'regular'}
+                  />
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </PopupShell>
+
       {InfoDialog}
     </Fragment>
   );
@@ -404,7 +581,7 @@ export const PaymentScreen = () => {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 24 },
   centeredBlock: {
     flex: 1,
     padding: 24,
@@ -422,22 +599,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyText: { fontSize: 16, marginBottom: 8, textAlign: 'center' },
-  card: {
-    padding: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 24,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  label: { fontSize: 14 },
-  value: { fontSize: 15, fontWeight: '600' },
-  cardHint: { fontSize: 13, marginBottom: 8 },
   primaryButton: {
     width: '100%',
     height: 50,
@@ -455,5 +616,79 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  footerLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 72,
+  },
+  cardSelectBlock: {
+    gap: 6,
+  },
+  cardSelectLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  cardSelectTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  cardSelectIconWrap: {
+    width: 28,
+    alignItems: 'center',
+  },
+  cardSelectTextWrap: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  cardSelectTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  cardSelectMeta: {
+    fontSize: 13,
+  },
+  cardPickerList: {
+    gap: 10,
+  },
+  cardPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  cardPickerRowText: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  cardPickerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  cardPickerMeta: {
+    fontSize: 13,
+  },
+  cardPickerCheck: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

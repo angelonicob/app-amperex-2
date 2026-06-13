@@ -1,10 +1,11 @@
-import { Button, Layout, Text } from '@ui-kitten/components';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Text } from '@ui-kitten/components';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import type { PendingPaymentSession } from '../../../../modules/session/pendingPayment';
 import { useAppTheme } from '../../../theme/useAppTheme';
-import { popupTemplateStyles, withPopupInsets } from './popupStyles';
+import { ButtonPrimary, ButtonTransparent } from '../button';
+import { PopupShell } from './PopupShell';
+import { popupTemplateStyles } from './popupStyles';
 
 type Step = 'warning' | 'ack';
 
@@ -21,8 +22,7 @@ export function PendingPaymentGateModal({
   onDismiss,
   onPayNow,
 }: PendingPaymentGateModalProps) {
-  const insets = useSafeAreaInsets();
-  const theme = useAppTheme();
+  const colors = useAppTheme();
   const [step, setStep] = useState<Step>('warning');
 
   useEffect(() => {
@@ -34,88 +34,79 @@ export function PendingPaymentGateModal({
     onDismiss();
   };
 
-  const amountLabel =
-    oldest != null
-      ? `$${Math.round(oldest.amountClp).toLocaleString('es-CL')} ${oldest.currency}`
-      : null;
+  const amountLabel = useMemo(() => {
+    if (oldest == null) return null;
+    return `$${Math.round(oldest.amountClp).toLocaleString('es-CL')} ${oldest.currency}`;
+  }, [oldest]);
+
+  const title =
+    step === 'warning' ? 'Tienes un pago pendiente' : 'Aviso importante';
+
+  const bodyText =
+    step === 'warning' ? (
+      <>
+        {oldest?.stationName
+          ? `Carga en ${oldest.stationName}`
+          : 'Tienes una sesión de carga sin pagar'}
+        {amountLabel ? `\nMonto: ${amountLabel}` : ''}
+        {'\n\n'}Debes pagar para volver a usar el servicio de carga.
+      </>
+    ) : (
+      'Ten en cuenta que no podrás usar el servicio hasta pagar tu deuda.'
+    );
+
+  const footer =
+    step === 'warning' ? (
+      <View style={styles.actions}>
+        <ButtonPrimary
+          title="Pagar ahora"
+          onPress={onPayNow}
+          style={styles.actionBtn}
+        />
+        <ButtonTransparent
+          title="Pagar más tarde"
+          onPress={() => setStep('ack')}
+          style={styles.actionBtn}
+        />
+      </View>
+    ) : (
+      <View style={styles.actions}>
+        <ButtonPrimary
+          title="Pagar"
+          onPress={onPayNow}
+          style={styles.actionBtn}
+        />
+        <ButtonTransparent
+          title="Confirmar"
+          onPress={resetAndDismiss}
+          color={colors.textSecondary}
+          style={styles.actionBtn}
+        />
+      </View>
+    );
 
   return (
-    <Modal
+    <PopupShell
       visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
       onRequestClose={() => {}}
+      title={title}
+      footer={footer}
     >
-      <View style={[popupTemplateStyles.backdrop, withPopupInsets(insets)]}>
-        <Pressable onPress={() => {}} style={popupTemplateStyles.cardHitSlop}>
-          <Layout
-            level="2"
-            style={[popupTemplateStyles.sheet, { borderColor: theme.border }]}
-          >
-            {step === 'warning' ? (
-              <>
-                <Text category="h5" style={popupTemplateStyles.title}>
-                  Tienes un pago pendiente
-                </Text>
-                <Text category="s1" appearance="hint" style={popupTemplateStyles.body}>
-                  {oldest?.stationName
-                    ? `Carga en ${oldest.stationName}`
-                    : 'Tienes una sesión de carga sin pagar'}
-                  {amountLabel ? `\nMonto: ${amountLabel}` : ''}
-                  {'\n\n'}Debes pagar para volver a usar el servicio de carga.
-                </Text>
-                <Button
-                  status="primary"
-                  onPress={onPayNow}
-                  style={styles.button}
-                >
-                  Pagar ahora
-                </Button>
-                <Button
-                  appearance="ghost"
-                  status="basic"
-                  onPress={() => setStep('ack')}
-                  style={styles.button}
-                >
-                  Pagar más tarde
-                </Button>
-              </>
-            ) : (
-              <>
-                <Text category="h5" style={popupTemplateStyles.title}>
-                  Aviso importante
-                </Text>
-                <Text category="s1" appearance="hint" style={popupTemplateStyles.body}>
-                  Ten en cuenta que no podrás usar el servicio hasta pagar tu deuda.
-                </Text>
-                <Button
-                  status="primary"
-                  onPress={onPayNow}
-                  style={styles.button}
-                >
-                  Pagar
-                </Button>
-                <Button
-                  appearance="outline"
-                  status="basic"
-                  onPress={resetAndDismiss}
-                  style={styles.button}
-                >
-                  Confirmar
-                </Button>
-              </>
-            )}
-          </Layout>
-        </Pressable>
-      </View>
-    </Modal>
+      <Text category="s1" appearance="hint" style={popupTemplateStyles.body}>
+        {bodyText}
+      </Text>
+    </PopupShell>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
+  actions: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 12,
+    marginTop: 16,
+  },
+  actionBtn: {
     width: '100%',
-    marginTop: 8,
   },
 });

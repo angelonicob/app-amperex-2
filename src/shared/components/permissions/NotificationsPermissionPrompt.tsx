@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePermissionsStore } from '../../../modules/permissions/store/usePermissionsStore';
 import { registerPushTokenIfGranted } from '../../../modules/notifications/push';
-import { PermissionPromptModal } from './PermissionPromptModal';
+import { PermissionConfirmPopup } from './PermissionConfirmPopup';
 
 type NotificationsPermissionPromptProps = {
   /** Drawer listo (sesión restaurada). */
@@ -73,13 +73,12 @@ export function NotificationsPermissionPrompt({
   }, [refreshNotificationPermission]);
 
   return (
-    <PermissionPromptModal
+    <PermissionConfirmPopup
       visible={visible}
       status={notificationStatus}
       disclaimerTitle="Notificaciones"
       title="Activar notificaciones"
       message="Te avisaremos sobre tus reservas y recordatorios de carga. Puedes cambiar esto en cualquier momento desde Configuración."
-      screenName="AmperEX"
       requestButtonText="Activar notificaciones"
       onRequest={handleRequest}
       onRefresh={handleRefresh}

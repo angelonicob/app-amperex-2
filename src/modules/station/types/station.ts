@@ -14,6 +14,8 @@ export interface Connector {
   powerKw: string | null;
   price: number | null;
   connectorType: string | null; // Código del tipo de conector (p. ej. "CCS2", "TYPE2")
+  /** Walk-in post-QR: alguien preparando sesión sin hora de salida aún. */
+  sessionPreparing?: boolean;
 }
 
 export interface ChargePoint {

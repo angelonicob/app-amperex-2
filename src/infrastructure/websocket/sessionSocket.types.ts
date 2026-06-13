@@ -15,6 +15,8 @@ export interface SessionUpdate {
     currentPercentage?: number;
     currentCost?: number;
     startedAt?: string;
+    targetEnergyKwh?: number;
+    mode?: 'TARGET' | 'FULL' | 'AMOUNT';
     finalEnergy?: number;
     finalPercentage?: number;
     totalCost?: number;
@@ -29,6 +31,9 @@ export interface SessionUpdate {
     timestamp?: string;
     message?: string;
     finishedAt?: string;
+    /** false si no aplica cobro One Click. */
+    paymentRequired?: boolean;
+    noPaymentReason?: 'ZERO_ENERGY' | 'PRIVATE_STATION';
   };
   timestamp: string;
 }

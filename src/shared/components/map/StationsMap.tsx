@@ -97,6 +97,7 @@ interface StationSheetListProps {
   colors: ReturnType<typeof useAppTheme>;
   onNavigate: (station: Station) => void;
   onReserve: (connector: Connector, chargePoint: ChargePoint) => void;
+  onPreparingSessionPress: () => void;
 }
 
 function StationSheetList({
@@ -104,6 +105,7 @@ function StationSheetList({
   colors,
   onNavigate,
   onReserve,
+  onPreparingSessionPress,
 }: StationSheetListProps) {
   const insets = useSafeAreaInsets();
 
@@ -168,12 +170,13 @@ function StationSheetList({
               connector={connector}
               chargePoint={chargePoint}
               onReserve={() => onReserve(connector, chargePoint)}
+              onPreparingSessionPress={onPreparingSessionPress}
             />
           ))}
         </View>
       </View>
     ),
-    [colors.text, onReserve],
+    [colors.text, onReserve, onPreparingSessionPress],
   );
 
   return (
@@ -206,9 +209,28 @@ function StationsMapComponent(
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
   const [mapHeading, setMapHeading] = useState(0);
   const [markersRevision, setMarkersRevision] = useState(0);
+  const [userMarkerTracksViewChanges, setUserMarkerTracksViewChanges] =
+    useState(true);
+  const [userLocationMarkerKey, setUserLocationMarkerKey] = useState(0);
 
   const { userLocation, isLocating, refreshUserLocation } = useMapUserLocation(
     hasLocationPermission,
+  );
+
+  useEffect(() => {
+    if (!userLocation) return;
+    setUserMarkerTracksViewChanges(true);
+    const timer = setTimeout(() => setUserMarkerTracksViewChanges(false), 600);
+    return () => clearTimeout(timer);
+  }, [userLocation?.latitude, userLocation?.longitude]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setUserLocationMarkerKey((k) => k + 1);
+      setUserMarkerTracksViewChanges(true);
+      const timer = setTimeout(() => setUserMarkerTracksViewChanges(false), 800);
+      return () => clearTimeout(timer);
+    }, []),
   );
 
   useEffect(() => {
@@ -284,10 +306,14 @@ function StationsMapComponent(
 
       const loadStations = async () => {
         try {
+          const before = useStationStore.getState().stations;
           await fetchStations();
           if (!cancelled) {
             setStationsLoaded(true);
-            setMarkersRevision(v => v + 1);
+            const after = useStationStore.getState().stations;
+            if (after.length !== before.length) {
+              setMarkersRevision((v) => v + 1);
+            }
           }
         } catch (error) {
           console.error('Error al cargar estaciones:', error);
@@ -317,6 +343,7 @@ function StationsMapComponent(
         connectionState: lastUpdate.data.connectionState,
         chargePointOperativeStatus: lastUpdate.data.chargePointOperativeStatus,
         connectorOperativeStatus: lastUpdate.data.connectorOperativeStatus,
+        sessionPreparing: lastUpdate.data.sessionPreparing,
       });
     }
   }, [lastUpdate, updateConnectorStatus]);
@@ -381,12 +408,27 @@ function StationsMapComponent(
   );
 
   const handleCenterOnMyLocation = useCallback(async () => {
-    if (!hasLocationPermission || isLocating) return;
-    const coords = await refreshUserLocation();
-    if (coords) {
+    if (!hasLocationPermission) return;
+
+    if (userLocation) {
+      animateToStationCoords(userLocation.latitude, userLocation.longitude);
+    }
+
+    const coords = await refreshUserLocation({ precise: true });
+    if (
+      coords &&
+      (!userLocation ||
+        coords.latitude !== userLocation.latitude ||
+        coords.longitude !== userLocation.longitude)
+    ) {
       animateToStationCoords(coords.latitude, coords.longitude);
     }
-  }, [hasLocationPermission, isLocating, refreshUserLocation, animateToStationCoords]);
+  }, [
+    hasLocationPermission,
+    userLocation,
+    refreshUserLocation,
+    animateToStationCoords,
+  ]);
 
   useImperativeHandle(ref, () => ({
     selectStation,
@@ -441,9 +483,20 @@ function StationsMapComponent(
     Linking.openURL(url);
   }, []);
 
+  const handlePreparingSessionPress = useCallback(() => {
+    showInfo(
+      'Conector en preparación',
+      'Alguien está preparando una sesión de carga en este conector.',
+    );
+  }, [showInfo]);
+
   const handleReserveConnector = useCallback(
     (connector: Connector, _chargePoint: ChargePoint) => {
       if (!selectedStation) return;
+      if (connector.sessionPreparing) {
+        handlePreparingSessionPress();
+        return;
+      }
 
       void (async () => {
         const preflight = await runCreateReservationPreflight();
@@ -471,7 +524,7 @@ function StationsMapComponent(
         });
       })();
     },
-    [selectedStation, showInfo],
+    [selectedStation, showInfo, handlePreparingSessionPress],
   );
 
   const mapMarkers = useMemo(
@@ -531,10 +584,12 @@ function StationsMapComponent(
         >
           {userLocation ? (
             <Marker
+              key={`user-location-${userLocationMarkerKey}`}
               identifier="user-location"
               coordinate={userLocation}
               anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
+              tracksViewChanges={userMarkerTracksViewChanges}
+              zIndex={999}
               accessibilityLabel="Tu ubicación"
             >
               <View style={styles.userLocationDotOuter}>
@@ -620,6 +675,7 @@ function StationsMapComponent(
               colors={colors}
               onNavigate={handleNavigateToStation}
               onReserve={handleReserveConnector}
+              onPreparingSessionPress={handlePreparingSessionPress}
             />
           ) : (
             <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>

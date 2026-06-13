@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '../icons/Icon';
 import type { Fa6IconStyle } from '../icons/createKittenFa6Icon';
+import { ButtonTransparent } from '../ui/button';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useSystemChrome } from '../../hooks/useSystemChrome';
 
@@ -37,6 +38,8 @@ export type EmptyStateAction = {
 export type EmptyStateLayoutProps = {
   title: string;
   subtitle?: string;
+  /** Texto secundario (tipografía más pequeña). */
+  hint?: string;
   icon?: EmptyStateIcon;
   /** Si se define, muestra un botón con la acción indicada. */
   action?: EmptyStateAction;
@@ -63,9 +66,10 @@ function resolvePlugIconColors(isDark: boolean, icon?: EmptyStateIcon) {
 function EmptyStateContent({
   title,
   subtitle,
+  hint,
   icon,
   action,
-}: Pick<EmptyStateLayoutProps, 'title' | 'subtitle' | 'icon' | 'action'>) {
+}: Pick<EmptyStateLayoutProps, 'title' | 'subtitle' | 'hint' | 'icon' | 'action'>) {
   const colors = useAppTheme();
   const { color: iconColor, halo: iconHalo } = resolvePlugIconColors(colors.isDark, icon);
   const resolvedIconColor = iconColor ?? colors.primary;
@@ -93,16 +97,31 @@ function EmptyStateContent({
           {subtitle}
         </Text>
       ) : null}
+      {hint ? (
+        <Text category="c2" appearance="hint" style={styles.blockHint}>
+          {hint}
+        </Text>
+      ) : null}
       {action ? (
-        <Button
-          appearance={action.appearance ?? 'filled'}
-          status={action.status ?? 'primary'}
-          onPress={action.onPress}
-          disabled={action.disabled}
-          style={styles.actionButton}
-        >
-          {action.label}
-        </Button>
+        action.appearance === 'ghost' ? (
+          <ButtonTransparent
+            title={action.label}
+            onPress={action.onPress}
+            disabled={action.disabled}
+            color={action.status === 'danger' ? colors.danger : colors.primary}
+            style={styles.actionButton}
+          />
+        ) : (
+          <Button
+            appearance={action.appearance ?? 'filled'}
+            status={action.status ?? 'primary'}
+            onPress={action.onPress}
+            disabled={action.disabled}
+            style={styles.actionButton}
+          >
+            {action.label}
+          </Button>
+        )
       ) : null}
     </Layout>
   );
@@ -115,6 +134,7 @@ function EmptyStateContent({
 export function EmptyStateLayout({
   title,
   subtitle,
+  hint,
   icon,
   action,
   fullScreen = false,
@@ -126,6 +146,7 @@ export function EmptyStateLayout({
     <EmptyStateContent
       title={title}
       subtitle={subtitle}
+      hint={hint}
       icon={icon}
       action={action}
     />
@@ -169,6 +190,13 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   blockTitle: { textAlign: 'center', marginBottom: 8 },
-  blockSubtitle: { textAlign: 'center', marginBottom: 28, paddingHorizontal: 8 },
+  blockSubtitle: { textAlign: 'center', marginBottom: 12, paddingHorizontal: 8 },
+  blockHint: {
+    textAlign: 'center',
+    marginBottom: 28,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+    fontSize: 12,
+  },
   actionButton: { width: '100%', marginTop: 12 },
 });

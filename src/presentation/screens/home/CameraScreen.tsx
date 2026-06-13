@@ -159,6 +159,7 @@ export const CameraScreen = () => {
   if (cameraStatus === 'not-determined') {
     return (
       <Disclaimer
+        fullScreen
         title="Acceso a la cámara"
         message="Necesitamos acceso a la cámara para escanear códigos QR en estaciones."
         buttonText="Continuar"
@@ -170,6 +171,7 @@ export const CameraScreen = () => {
   if (cameraStatus === 'requestable') {
     return (
       <PermissionRequest
+        fullScreen
         title="Se necesita cámara"
         message="La cámara es necesaria para escanear el QR de la estación."
         screenName="Cámara"
@@ -182,6 +184,7 @@ export const CameraScreen = () => {
   if (cameraStatus === 'blocked' || cameraStatus === 'unavailable') {
     return (
       <PermissionBlocked
+        fullScreen
         title="Permiso bloqueado"
         message="Has bloqueado el permiso de cámara. Para usar esta función debes habilitarlo en configuración."
         screenName="Cámara"
@@ -276,42 +279,6 @@ export const CameraScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  permissionContainer: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-  },
-  permissionPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  permissionPlaceholderText: {
-    fontSize: 16,
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-  permissionButton: {
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: '#44b778',
-    borderRadius: 8,
-  },
-  permissionButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  permissionSecondaryButton: {
-    marginTop: 16,
-    paddingVertical: 10,
-  },
-  permissionSecondaryText: {
-    fontSize: 14,
-    color: '#9ca3af',
-    fontWeight: '600',
-  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

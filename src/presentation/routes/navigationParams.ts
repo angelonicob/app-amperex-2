@@ -18,6 +18,7 @@ export type RootStackParams = {
   Session: { screen?: keyof SessionStackParams } | undefined;
   CreateReserva: CreateReservationAgendaParams;
   PasswordResetSuccess: undefined;
+  LegalDocument: { url: string; title: string };
 };
 
 export type CreateReservationAgendaParams = {

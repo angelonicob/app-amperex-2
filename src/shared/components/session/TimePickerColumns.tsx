@@ -118,11 +118,13 @@ function Column<T>({
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
         snapToInterval={ITEM_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"
         contentContainerStyle={styles.columnContent}
         onMomentumScrollEnd={onScrollEnd}
+        keyboardShouldPersistTaps="handled"
       >
         {itemsList.map((item, i) => {
           const enabled = isItemEnabled ? isItemEnabled(item, i) : true;

@@ -25,7 +25,7 @@ export const fetchStationsMap = async (): Promise<Station[]> => {
         : null,
       chargePoints: station.chargePoints.map(chargePoint => ({
         id: chargePoint.id,
-        name: (chargePoint.name ?? '').trim() || chargePoint.ocppId,
+        name: chargePoint.name.trim(),
         ocppId: chargePoint.ocppId,
         operativeStatus: chargePoint.operativeStatus ?? 'ACTIVE',
         connectionState: chargePoint.connectionState ?? 'ONLINE',
@@ -37,6 +37,7 @@ export const fetchStationsMap = async (): Promise<Station[]> => {
           powerKw: connector.powerKw || null,
           price: connector.price ?? null,
           connectorType: connector.connectorType ?? null,
+          sessionPreparing: connector.sessionPreparing === true,
         })),
         availableConnectors: chargePoint.availableConnectors,
         totalConnectors: chargePoint.totalConnectors,

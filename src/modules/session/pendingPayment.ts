@@ -27,8 +27,10 @@ export interface PaymentSummary {
   totalDurationSeconds: number | null;
   stationName: string | null;
   paymentStatus: PaymentStatusValue;
-  /** false en estaciones privadas (sin cobro One Click). */
+  /** false cuando no aplica cobro One Click (estación privada o sin energía). */
   requiresPayment?: boolean;
+  /** Motivo sin cobro cuando requiresPayment es false. */
+  noPaymentReason?: 'ZERO_ENERGY' | 'PRIVATE_STATION';
 }
 
 export async function getPendingPayments(): Promise<PendingPaymentsResponse> {

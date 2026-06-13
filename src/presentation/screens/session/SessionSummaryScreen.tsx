@@ -19,6 +19,7 @@ import { SessionCompletionSummary } from '../../../shared/components/session/Ses
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
 import { useSystemChrome } from '../../../shared/hooks/useSystemChrome';
 import { replaceToRoute } from '../../routes/navigationRef';
+import { buildSessionCompletionSubtitle } from '../../../shared/utils/sessionCompletionSubtitle';
 
 function summaryFromChargingData(
   chargingData: ReturnType<typeof useSessionStore.getState>['chargingData'],
@@ -108,11 +109,9 @@ export const SessionSummaryScreen = () => {
   }, [pendingContext, chargingData, setPendingContext]);
 
   const subtitle = useMemo(() => {
-    if (summary?.stationName) {
-      return `${summary.stationName} · Estación privada, sin cobro`;
-    }
-    return 'Estación privada — sin cobro al usuario';
-  }, [summary?.stationName]);
+    if (!summary) return '';
+    return buildSessionCompletionSubtitle(summary);
+  }, [summary]);
 
   const handleDone = () => {
     useSessionStore.getState().clearSession();

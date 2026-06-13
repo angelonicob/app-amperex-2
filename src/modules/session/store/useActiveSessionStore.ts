@@ -3,10 +3,11 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type { ActiveSession, ActiveSessionResponse } from '../session';
 import { getActiveSession } from '../session';
 import { secureStorageAdapter } from '../../../infrastructure/storage/secureStorage';
+import { isRestorableActiveSession } from '../sessionRestoreUtils';
 
 const STORAGE_KEY = 'amperex-active-session';
 
-export type RestoreState = 'loading' | 'done';
+export type RestoreState = 'loading' | 'revalidating' | 'done';
 
 export type RestoreResult =
   | { type: 'ACTIVE_SESSION'; session: ActiveSession }
@@ -18,17 +19,20 @@ export type RestoreResult =
 export interface ActiveSessionState {
   /** Sesión activa restaurada (GET /session/active). Null si no hay o tras clear. */
   activeSession: ActiveSession | null;
-  /** Estado de restauración (runtime; NO persistido). Inicia en loading hasta el primer GET /active. */
+  /**
+   * Estado de restauración (runtime; NO persistido).
+   * - loading: bloquea UI (sin cache usable).
+   * - revalidating: hay snapshot local; GET en background.
+   * - done: hidratación terminada.
+   */
   restoreState: RestoreState;
   setSession: (response: ActiveSessionResponse) => void;
   clearActiveSession: () => void;
   /**
    * Comprueba en backend si hay sesión activa.
-   * - Si existe: setSession(response) (persistido).
-   * - Si no: clearActiveSession() (limpia store persistido).
-   * Debe llamarse al abrir la app (con usuario logueado) para restaurar estado.
+   * Con `silent: true` y cache CHARGING/STOPPING no pasa a loading (solo revalidating).
    */
-  hydrateFromBackend: () => Promise<RestoreResult>;
+  hydrateFromBackend: (options?: { silent?: boolean }) => Promise<RestoreResult>;
 }
 
 export const useActiveSessionStore = create<ActiveSessionState>()(
@@ -45,8 +49,15 @@ export const useActiveSessionStore = create<ActiveSessionState>()(
         set({ activeSession: null, restoreState: 'done' });
       },
 
-      hydrateFromBackend: async () => {
-        set({ restoreState: 'loading' });
+      hydrateFromBackend: async (options?: { silent?: boolean }) => {
+        const cached = useActiveSessionStore.getState().activeSession;
+        const silent =
+          options?.silent === true && isRestorableActiveSession(cached);
+
+        set({
+          restoreState: silent ? 'revalidating' : 'loading',
+        });
+
         try {
           const res = await getActiveSession();
           if (res?.session) {
@@ -76,6 +87,11 @@ export const useActiveSessionStore = create<ActiveSessionState>()(
       partialize: state => ({
         activeSession: state.activeSession,
       }),
+      onRehydrateStorage: () => state => {
+        if (isRestorableActiveSession(state?.activeSession)) {
+          state!.restoreState = 'revalidating';
+        }
+      },
     },
   ),
 );

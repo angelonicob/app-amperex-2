@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { useActiveSessionStore } from './store/useActiveSessionStore';
-import { useSessionStore } from './store/useSessionStore';
-import { navigationRef, replaceToRoute } from '../../presentation/routes/navigationRef';
+import { navigationRef } from '../../presentation/routes/navigationRef';
 import { useAuthStore } from '../auth/store/userAuthStore';
+import { wasSessionHydratedThisLaunch } from './sessionBootstrap';
+import {
+  applyRestoreResultToStores,
+  navigateForRestoreResult,
+} from './sessionRestoreUtils';
+import { useActiveSessionStore } from './store/useActiveSessionStore';
 
 function rootStackRouteName(): string | undefined {
   if (!navigationRef.isReady()) return undefined;
@@ -13,18 +17,11 @@ function rootStackRouteName(): string | undefined {
 }
 
 /**
- * Hidrata sesión activa desde GET /mobile/session/active y navega.
- * - CHARGING / STOPPING → `Session` → pantalla `Sesión` (WebSocket se une en SessionChargeScreen).
- * - Sin sesión → `App` (drawer).
- * - Red / 5xx → Offline o BackendError (reintento al volver API y remontar drawer).
- * - 401/403 → Auth (token inválido).
- *
- * Siempre consulta al backend al entrar al drawer autenticado; no confía solo en persistencia.
+ * Hidrata sesión activa cuando el usuario entra al drawer (p. ej. tras login).
+ * El cold start lo resuelve `LoadingGateScreen` con `bootstrapActiveSession`.
  */
 export function useSessionRestore() {
   const hydrateFromBackend = useActiveSessionStore(s => s.hydrateFromBackend);
-  const setChargingData = useSessionStore(s => s.setChargingData);
-  const setIsCharging = useSessionStore(s => s.setIsCharging);
   const hasRestoredRef = useRef(false);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const apiStatus = useAuthStore(s => s.apiStatus);
@@ -33,48 +30,30 @@ export function useSessionRestore() {
     if (isAuthenticated !== 'authenticated') return;
     if (apiStatus !== 'reachable') return;
     if (hasRestoredRef.current) return;
+    if (wasSessionHydratedThisLaunch()) {
+      hasRestoredRef.current = true;
+      return;
+    }
 
     let cancelled = false;
     const run = async () => {
-      const res = await hydrateFromBackend();
+      const cached = useActiveSessionStore.getState().activeSession;
+      const res = await hydrateFromBackend({
+        silent: cached?.status === 'CHARGING' || cached?.status === 'STOPPING',
+      });
       if (cancelled) return;
 
-      switch (res.type) {
-        case 'ACTIVE_SESSION': {
-          setChargingData({
-            sessionId: res.session.id,
-            status: res.session.status as 'CHARGING' | 'STOPPING',
-            startedAt: res.session.startedAt ?? undefined,
-            ...(res.session.plannedDepartureAt
-              ? { departureTime: res.session.plannedDepartureAt }
-              : {}),
-          });
-          setIsCharging(true);
-          replaceToRoute('Session', { screen: 'Sesión' });
-          break;
+      if (res.type === 'ACTIVE_SESSION') {
+        applyRestoreResultToStores(res);
+        if (rootStackRouteName() !== 'Session') {
+          navigateForRestoreResult(res);
         }
-        case 'NO_SESSION': {
-          // Ya estamos en App (p. ej. tras login): NO hacer reset — vuelve a montar DrawerHome,
-          // resetea hasRestoredRef y re-entra en loading en bucle.
-          if (rootStackRouteName() !== 'App') {
-            replaceToRoute('App');
-          }
-          break;
+      } else if (res.type === 'NO_SESSION') {
+        if (rootStackRouteName() !== 'App') {
+          navigateForRestoreResult(res);
         }
-        case 'UNAUTHORIZED':
-          useAuthStore.getState().logout();
-          replaceToRoute('Auth');
-          break;
-        case 'OFFLINE':
-          replaceToRoute('Offline');
-          break;
-        case 'ERROR':
-          replaceToRoute('BackendError');
-          break;
-        default:
-          if (rootStackRouteName() !== 'App') {
-            replaceToRoute('App');
-          }
+      } else {
+        navigateForRestoreResult(res);
       }
 
       if (!cancelled) {
@@ -86,11 +65,5 @@ export function useSessionRestore() {
     return () => {
       cancelled = true;
     };
-  }, [
-    isAuthenticated,
-    apiStatus,
-    hydrateFromBackend,
-    setChargingData,
-    setIsCharging,
-  ]);
+  }, [isAuthenticated, apiStatus, hydrateFromBackend]);
 }

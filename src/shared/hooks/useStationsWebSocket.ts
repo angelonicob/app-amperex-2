@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_URL } from '../../infrastructure/http/Api';
+import { getFirebaseIdToken } from '../../infrastructure/firebase/firebaseSession';
 import {
   createStationsSocket,
   isStationsWebSocketMessage,
@@ -8,68 +9,90 @@ import {
 
 /**
  * Hook para conectarse al WebSocket de estaciones (estado de conectores).
- * Usa la capa de infraestructura (websocket/stationsSocket).
+ * Requiere sesión Firebase activa (token en query al upgrade).
  */
 export function useStationsWebSocket(shouldConnect: boolean = true) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<ConnectorStatusUpdate | null>(null);
   const clientRef = useRef<ReturnType<typeof createStationsSocket> | null>(null);
 
+  const attachCallbacks = useCallback(
+    (client: ReturnType<typeof createStationsSocket>) => {
+      client.setCallbacks({
+        onOpen: () => setIsConnected(true),
+        onClose: () => setIsConnected(false),
+        onMessage: (data: unknown) => {
+          if (
+            isStationsWebSocketMessage(data) &&
+            data.type === 'connector-status-updated'
+          ) {
+            setLastUpdate(data);
+          }
+        },
+      });
+    },
+    [],
+  );
+
+  const connectWithToken = useCallback(async () => {
+    const token = await getFirebaseIdToken();
+    if (!token) {
+      setIsConnected(false);
+      return;
+    }
+
+    clientRef.current?.disconnect();
+    const client = createStationsSocket(API_URL, token);
+    clientRef.current = client;
+    attachCallbacks(client);
+    client.connect();
+  }, [attachCallbacks]);
+
   useEffect(() => {
     if (!shouldConnect) {
-      if (clientRef.current) {
-        clientRef.current.disconnect();
-        clientRef.current = null;
-      }
+      clientRef.current?.disconnect();
+      clientRef.current = null;
       setIsConnected(false);
       setLastUpdate(null);
       return;
     }
 
-    const client = createStationsSocket(API_URL);
-    clientRef.current = client;
+    let cancelled = false;
 
-    client.setCallbacks({
-      onOpen: () => setIsConnected(true),
-      onClose: () => setIsConnected(false),
-      onMessage: (data: unknown) => {
-        if (isStationsWebSocketMessage(data) && data.type === 'connector-status-updated') {
-          setLastUpdate(data);
-        }
-      },
-    });
+    const run = async () => {
+      const token = await getFirebaseIdToken();
+      if (cancelled) return;
+      if (!token) {
+        setIsConnected(false);
+        return;
+      }
 
-    client.connect();
+      clientRef.current?.disconnect();
+      const client = createStationsSocket(API_URL, token);
+      clientRef.current = client;
+      attachCallbacks(client);
+      client.connect();
+    };
+
+    void run();
 
     return () => {
-      client.disconnect();
+      cancelled = true;
+      clientRef.current?.disconnect();
       clientRef.current = null;
     };
-  }, [shouldConnect]);
+  }, [shouldConnect, attachCallbacks]);
 
-  const reconnect = () => {
-    if (shouldConnect && clientRef.current) {
-      clientRef.current.disconnect();
-      const client = createStationsSocket(API_URL);
-      clientRef.current = client;
-      client.setCallbacks({
-        onOpen: () => setIsConnected(true),
-        onClose: () => setIsConnected(false),
-        onMessage: (data: unknown) => {
-          if (isStationsWebSocketMessage(data) && data.type === 'connector-status-updated') {
-            setLastUpdate(data);
-          }
-        },
-      });
-      client.connect();
-    }
-  };
+  const reconnect = useCallback(() => {
+    if (!shouldConnect) return;
+    void connectWithToken();
+  }, [shouldConnect, connectWithToken]);
 
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     clientRef.current?.disconnect();
     clientRef.current = null;
     setIsConnected(false);
-  };
+  }, []);
 
   return {
     isConnected,
@@ -77,4 +100,4 @@ export function useStationsWebSocket(shouldConnect: boolean = true) {
     reconnect,
     disconnect,
   };
-}
+};

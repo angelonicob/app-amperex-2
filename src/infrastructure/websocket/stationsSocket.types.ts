@@ -19,6 +19,7 @@ export interface ConnectorStatusUpdate {
     connectionState?: ChargePointConnectionState;
     chargePointOperativeStatus?: ConnectorOperativeStatus;
     connectorOperativeStatus?: ConnectorOperativeStatus;
+    sessionPreparing?: boolean;
     timestamp: string;
   };
 }

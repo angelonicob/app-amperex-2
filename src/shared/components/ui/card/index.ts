@@ -1,5 +1,5 @@
 export { CarCardHorizontal, type CarCardHorizontalProps } from './CarCardHorizontal';
-export { CarCardVertical, type CarCardVerticalProps } from './CarCardVertical';
+export { CarCardSelect, type CarCardSelectProps } from './CarCardSelect';
 export { CardConnector, type CardConnectorProps } from './CardConnector';
 export { HistoryCard, type HistoryCardProps } from './HistoryCard';
 export { LabelWarning, type LabelWarningProps } from './LabelWarning';

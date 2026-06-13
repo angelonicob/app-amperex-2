@@ -24,7 +24,7 @@ import { StationsMap, type StationsMapRef } from '../../../shared/components/map
 import { TAB_BAR_OVERLAY_HEIGHT } from '../../../shared/constants/layout';
 import Icon from '../../../shared/components/icons/Icon';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
-import { PermissionPromptModal } from '../../../shared/components/permissions/PermissionPromptModal';
+import { PermissionConfirmPopup } from '../../../shared/components/permissions/PermissionConfirmPopup';
 import type { BottomTabStackParams } from '../../routes/navigationParams';
 
 function formatNotificationDate(dateStr: string) {
@@ -221,13 +221,12 @@ export const MapScreen = () => {
         onMyLocationWithoutPermission={handleMyLocationWithoutPermission}
       />
 
-      <PermissionPromptModal
+      <PermissionConfirmPopup
         visible={locationPromptVisible}
         status={locationStatus}
         disclaimerTitle="Ubicación para el mapa"
         title="Ubicación necesaria"
         message="Necesitamos tu ubicación para centrar el mapa en tu posición y mostrarte estaciones cercanas."
-        screenName="Mapa"
         requestButtonText="Permitir ubicación"
         onRequest={handleLocationRequest}
         onRefresh={handleLocationRefresh}

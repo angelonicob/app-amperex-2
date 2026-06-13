@@ -69,7 +69,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
           const navState = navigation.getState();
           const idx = navState?.index ?? 0;
           const route = navState?.routes?.[idx];
-          if (route?.name === 'Session') {
+          if (route?.name === 'Session' || route?.name === 'Loading') {
             return;
           }
           navigation.dispatch(

@@ -25,6 +25,7 @@ export interface StationState {
     connectionState?: ConnectionState;
     chargePointOperativeStatus?: OperativeStatus;
     connectorOperativeStatus?: OperativeStatus;
+    sessionPreparing?: boolean;
   }) => void;
 }
 
@@ -53,6 +54,9 @@ export const useStationStore = create<StationState>()(set => ({
               status: update.status,
               operativeStatus:
                 update.connectorOperativeStatus ?? connector.operativeStatus,
+              ...(update.sessionPreparing !== undefined
+                ? { sessionPreparing: update.sessionPreparing }
+                : {}),
             };
           });
 

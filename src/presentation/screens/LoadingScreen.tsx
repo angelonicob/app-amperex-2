@@ -1,13 +1,17 @@
 import { Layout, Text } from '@ui-kitten/components';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-export const LoadingScreen = () => {
+type LoadingScreenProps = {
+  message?: string;
+};
+
+export const LoadingScreen = ({ message = 'Cargando...' }: LoadingScreenProps) => {
   return (
     <Layout level="1" style={styles.container}>
       <View style={styles.content}>
         <ActivityIndicator size="large" />
         <Text category="s1" style={styles.text}>
-          Cargando...
+          {message}
         </Text>
       </View>
     </Layout>

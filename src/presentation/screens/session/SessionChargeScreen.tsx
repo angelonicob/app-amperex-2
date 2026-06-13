@@ -1,4 +1,4 @@
-import { Button, Layout, Text, useTheme } from '@ui-kitten/components';
+import { Layout, Text, useTheme } from '@ui-kitten/components';
 import type { AxiosError } from 'axios';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -7,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParams } from '../../routes/navigationParams';
 import { checkSessionStatus, getActiveSession, stopSession } from '../../../modules/session/session';
+import { sessionUpdateToChargingData } from '../../../modules/session/activeSessionToChargingData';
 import { useSessionStore } from '../../../modules/session/store/useSessionStore';
 import { usePendingPaymentStore } from '../../../modules/session/store/usePendingPaymentStore';
 import type { PaymentSummary } from '../../../modules/session/pendingPayment';
@@ -20,6 +21,10 @@ import { replaceToRoute } from '../../routes/navigationRef';
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
 import { useSystemChrome } from '../../../shared/hooks/useSystemChrome';
 import { formatElapsedSince } from '../../../shared/components/ui/card/historyFormat';
+import { ButtonPrimary, ButtonTransparent } from '../../../shared/components/ui/button';
+import { resolveNoPaymentReasonFromSummary } from '../../../shared/utils/sessionCompletionSubtitle';
+import { LoadingScreen } from '../LoadingScreen';
+import { isRestorableActiveSession } from '../../../modules/session/sessionRestoreUtils';
 
 function wsMetricNumber(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -141,15 +146,12 @@ const ChargeProgressCard = ({
 export const SessionChargeScreen = () => {
   const colors = useAppTheme();
   const screenBackground = useSystemChrome();
-  const [currentEnergy, setCurrentEnergy] = useState<number>(0);
-  const [currentPercentage, setCurrentPercentage] = useState<number>(0);
-  const [currentPower, setCurrentPower] = useState<number>(0);
-  const [currentCost, setCurrentCost] = useState<number>(0);
   const [isStopping, setIsStopping] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const { scanQrResponse, chargingData, isCharging, setChargingData, setIsCharging } =
     useSessionStore();
   const activePersisted = useActiveSessionStore(s => s.activeSession);
+  const restoreState = useActiveSessionStore(s => s.restoreState);
   const effectiveSessionId = chargingData?.sessionId ?? activePersisted?.id;
 
   const navigation = useNavigation<StackNavigationProp<RootStackParams>>();
@@ -161,25 +163,6 @@ export const SessionChargeScreen = () => {
     reconnect,
   } = useSessionWebSocket(effectiveSessionId);
 
-  // Si el store de carga aún no tiene sessionId (carrera tras cold start), hidratar desde sesión activa persistida + backend.
-  useEffect(() => {
-    if (chargingData?.sessionId) return;
-    const sid = activePersisted?.id;
-    if (!sid) return;
-    const st = activePersisted.status;
-    if (st !== 'CHARGING' && st !== 'STOPPING') return;
-    setChargingData({
-      sessionId: sid,
-      status: st as 'CHARGING' | 'STOPPING',
-      startedAt: activePersisted.startedAt ?? undefined,
-    });
-    setIsCharging(true);
-  }, [
-    activePersisted,
-    chargingData?.sessionId,
-    setChargingData,
-    setIsCharging,
-  ]);
   const navigatedToPaymentRef = useRef<boolean>(false);
   const stoppingWatchdogStartedRef = useRef<boolean>(false);
   const { showInfo, InfoDialog } = useInfoDialog();
@@ -203,19 +186,19 @@ export const SessionChargeScreen = () => {
     const currentPercentage = wsMetricNumber(lastUpdate.data.currentPercentage);
     const currentCost = wsMetricNumber(lastUpdate.data.currentCost);
     const pricePerKwh = wsMetricNumber(lastUpdate.data.pricePerKwh);
+    const targetEnergyKwh = wsMetricNumber(lastUpdate.data.targetEnergyKwh);
 
-    const sessionData = {
+    const sessionData = sessionUpdateToChargingData({
       sessionId: lastUpdate.data.sessionId,
-      status: lastUpdate.data.status as any,
-      ocppTransactionId: lastUpdate.data.ocppTransactionId
-        ? parseInt(lastUpdate.data.ocppTransactionId, 10)
-        : undefined,
+      status: lastUpdate.data.status,
+      ocppTransactionId: lastUpdate.data.ocppTransactionId,
       startedAt: lastUpdate.data.startedAt,
       meterStart: wsMetricNumber(lastUpdate.data.meterStart),
       ...(energyKwh !== undefined ? { energyKwh } : {}),
       ...(powerKw !== undefined ? { powerKw } : {}),
       ...(currentPercentage !== undefined ? { currentPercentage } : {}),
       ...(currentCost !== undefined ? { currentCost } : {}),
+      ...(targetEnergyKwh !== undefined ? { targetEnergyKwh } : {}),
       voltageV: lastUpdate.data.voltageV,
       currentA: lastUpdate.data.currentA,
       timestamp: lastUpdate.data.timestamp || lastUpdate.timestamp,
@@ -230,28 +213,26 @@ export const SessionChargeScreen = () => {
         ? { totalDurationSeconds: lastUpdate.data.totalDurationSeconds }
         : {}),
       ...(lastUpdate.data.currency ? { currency: lastUpdate.data.currency } : {}),
-      ...(pricePerKwh !== undefined ? { priceClpPerKwh: pricePerKwh } : {}),
+      ...(pricePerKwh !== undefined ? { pricePerKwh } : {}),
+      ...(lastUpdate.data.mode ? { mode: lastUpdate.data.mode } : {}),
       reason: lastUpdate.data.reason,
       finishedAt: lastUpdate.data.finishedAt,
       message: lastUpdate.data.message,
       ...(typeof lastUpdate.data.paymentRequired === 'boolean'
         ? { paymentRequired: lastUpdate.data.paymentRequired }
         : {}),
-    };
+      ...(lastUpdate.data.noPaymentReason
+        ? { noPaymentReason: lastUpdate.data.noPaymentReason }
+        : {}),
+    });
 
     setChargingData(sessionData);
 
-    if (sessionData.status === 'CHARGING') setIsCharging(true);
-    if (sessionData.status === 'FINISHED' || sessionData.status === 'FAILED') {
+    const wsStatus = lastUpdate.data.status;
+    if (wsStatus === 'CHARGING') setIsCharging(true);
+    if (wsStatus === 'FINISHED' || wsStatus === 'FAILED') {
       setIsCharging(false);
     }
-
-    // Fallback local UI
-    if (typeof sessionData.energyKwh === 'number') setCurrentEnergy(sessionData.energyKwh);
-    if (typeof sessionData.currentPercentage === 'number')
-      setCurrentPercentage(sessionData.currentPercentage);
-    if (typeof sessionData.powerKw === 'number') setCurrentPower(sessionData.powerKw);
-    if (typeof sessionData.currentCost === 'number') setCurrentCost(sessionData.currentCost);
   }, [
     lastUpdate,
     updateSeq,
@@ -310,11 +291,12 @@ export const SessionChargeScreen = () => {
       data.paymentRequired === true ||
       (data.paymentRequired !== false && amountClp > 0);
 
+    const summaryEnergyKwh = Number(energyKwh) || 0;
     const summary: PaymentSummary = {
       sessionId: data.sessionId,
       amountClp,
       currency: data.currency ?? 'CLP',
-      energyKwh: Number(energyKwh) || 0,
+      energyKwh: summaryEnergyKwh,
       priceClpPerKwh: data.priceClpPerKwh ?? null,
       totalDurationSeconds:
         data.totalDurationSeconds ?? data.estimatedDurationSeconds ?? null,
@@ -322,6 +304,14 @@ export const SessionChargeScreen = () => {
       paymentStatus: paymentRequired ? 'PENDING' : 'CONFIRMED',
       requiresPayment: paymentRequired,
     };
+    if (!paymentRequired) {
+      summary.noPaymentReason =
+        data.noPaymentReason ??
+        resolveNoPaymentReasonFromSummary({
+          energyKwh: summaryEnergyKwh,
+          amountClp,
+        });
+    }
     usePendingPaymentStore.getState().setContext(summary);
 
     void navigateToSessionCompletion(data.sessionId, summary).catch(() => {
@@ -469,13 +459,20 @@ export const SessionChargeScreen = () => {
     });
   };
 
-  // Usar datos del WebSocket si existen; si falta currentCost, derivar energía × tarifa.
-  const displayEnergy = chargingData?.energyKwh ?? currentEnergy;
-  const displayPercentage = chargingData?.currentPercentage ?? currentPercentage;
-  const displayPower = chargingData?.powerKw ?? currentPower;
+  const hasRestSnapshot = Boolean(
+    effectiveSessionId &&
+      (chargingData?.energyKwh != null ||
+        chargingData?.currentCost != null ||
+        chargingData?.startedAt != null ||
+        chargingData?.priceClpPerKwh != null),
+  );
+
+  const displayEnergy = chargingData?.energyKwh;
+  const displayPercentage = chargingData?.currentPercentage;
+  const displayPower = chargingData?.powerKw;
   const displayTariffClpPerKwh = chargingData?.priceClpPerKwh;
   const displayCostClp = useMemo(() => {
-    const e = chargingData?.energyKwh ?? currentEnergy;
+    const e = chargingData?.energyKwh;
     const p = chargingData?.priceClpPerKwh;
     const derived =
       typeof e === 'number' &&
@@ -486,18 +483,16 @@ export const SessionChargeScreen = () => {
       p > 0
         ? Math.round(e * p)
         : null;
-    const fromServer = chargingData?.currentCost ?? currentCost;
+    const fromServer = chargingData?.currentCost;
     if (typeof fromServer === 'number' && Number.isFinite(fromServer)) {
       if (fromServer > 0 || derived == null || derived <= 0) return fromServer;
       return derived;
     }
-    return derived ?? 0;
+    return derived ?? null;
   }, [
     chargingData?.currentCost,
     chargingData?.energyKwh,
     chargingData?.priceClpPerKwh,
-    currentCost,
-    currentEnergy,
   ]);
   const displayStatus = chargingData?.status ?? (isCharging ? 'CHARGING' : 'CONNECTED');
   const sessionStartedAt = chargingData?.startedAt ?? activePersisted?.startedAt;
@@ -511,8 +506,17 @@ export const SessionChargeScreen = () => {
   const isStoppingState = chargingData?.status === 'STOPPING';
   const showStopButton = canStop && !isStoppingState;
 
-  // Al restaurar sesión tras reabrir la app, normalmente NO existe `scanQrResponse` (no hay QR escaneado).
-  // La fuente de verdad para mostrar esta pantalla debe ser `chargingData.sessionId`.
+  const showWsBanner = !isWsConnected && Boolean(wsError) && !hasRestSnapshot;
+
+  if (
+    !effectiveSessionId &&
+    (restoreState === 'loading' ||
+      restoreState === 'revalidating' ||
+      isRestorableActiveSession(activePersisted))
+  ) {
+    return <LoadingScreen message="Cargando sesión…" />;
+  }
+
   if (!effectiveSessionId) {
     return (
       <Fragment>
@@ -525,9 +529,11 @@ export const SessionChargeScreen = () => {
             <Text category="s1" appearance="hint" style={styles.emptyText}>
               No hay sesión activa
             </Text>
-            <Button status="primary" onPress={() => replaceToRoute('App')} style={styles.primaryButton}>
-              Volver al inicio
-            </Button>
+            <ButtonPrimary
+              title="Volver al inicio"
+              onPress={() => replaceToRoute('App')}
+              style={styles.primaryButton}
+            />
           </Layout>
           </Layout>
         </SafeAreaView>
@@ -556,22 +562,16 @@ export const SessionChargeScreen = () => {
           <Text status="primary" category="s1" style={styles.inProgressText}>
             Carga en curso
           </Text>
-          {!isWsConnected && (
+          {showWsBanner && (
             <Layout style={styles.wsBanner} level="2">
               <Text category="c1" appearance="hint" style={styles.wsBannerText}>
-                {wsError ?? 'Conectando en tiempo real…'}
+                {wsError}
               </Text>
-              {wsError ? (
-                <Button
-                  size="small"
-                  appearance="outline"
-                  status="basic"
-                  style={styles.wsReconnect}
-                  onPress={() => reconnect()}
-                >
-                  Reintentar conexión
-                </Button>
-              ) : null}
+              <ButtonTransparent
+                title="Reintentar conexión"
+                onPress={() => reconnect()}
+                style={styles.wsReconnect}
+              />
             </Layout>
           )}
         </Layout>
@@ -583,7 +583,9 @@ export const SessionChargeScreen = () => {
             </Text>
             <View style={styles.powerValueRow}>
               <Text style={styles.costValue}>
-                {Number.isFinite(displayPower) ? Number(displayPower).toFixed(1) : '0.0'}
+                {typeof displayPower === 'number' && Number.isFinite(displayPower)
+                  ? Number(displayPower).toFixed(1)
+                  : '—'}
               </Text>
               <Text style={styles.powerUnitInline}>kW</Text>
             </View>
@@ -594,7 +596,9 @@ export const SessionChargeScreen = () => {
               Costo acumulado
             </Text>
             <Text style={styles.costValue}>
-              {formatAccumulatedCostClp(displayCostClp)} CLP
+              {displayCostClp != null
+                ? `${formatAccumulatedCostClp(displayCostClp)} CLP`
+                : '— CLP'}
             </Text>
           </Layout>
         </Layout>
@@ -611,9 +615,9 @@ export const SessionChargeScreen = () => {
         )}
 
         <ChargeProgressCard
-          energyKwh={displayEnergy}
+          energyKwh={displayEnergy ?? 0}
           startedAt={sessionStartedAt}
-          socPercent={displayPercentage}
+          socPercent={displayPercentage ?? 0}
           targetEnergyKwh={chargingData?.estimatedEnergyKwh}
         />
 
@@ -650,14 +654,13 @@ export const SessionChargeScreen = () => {
             </Layout>
           )}
           {showStopButton && (
-            <Button
-              status="danger"
+            <ButtonTransparent
+              title={isStopping ? 'Deteniendo carga...' : 'Detener Carga'}
               onPress={handleStopCharging}
               disabled={isStopping}
-              style={styles.dangerButton}
-            >
-              {isStopping ? 'Deteniendo carga...' : 'Detener Carga'}
-            </Button>
+              color="#FFFFFF"
+              style={[styles.dangerButton, { backgroundColor: colors.danger }]}
+            />
           )}
         </Layout>
       </ScrollView>

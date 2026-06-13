@@ -77,12 +77,12 @@ export const ConfirmPopup = ({
 
 const styles = StyleSheet.create({
   actions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'stretch',
     gap: 12,
     marginTop: 16,
   },
   actionBtn: {
-    flex: 1,
+    width: '100%',
   },
 });

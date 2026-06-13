@@ -4,6 +4,7 @@ import { InfoPopup } from '../components/ui/popup/InfoPopup';
 type DialogContent = {
   title: string;
   message: string;
+  hint?: string;
   buttonTitle?: string;
 };
 
@@ -20,10 +21,19 @@ export function useInfoDialog() {
     (
       title: string,
       message: string,
-      opts?: { buttonTitle?: string; onAfterAccept?: () => void },
+      opts?: {
+        buttonTitle?: string;
+        hint?: string;
+        onAfterAccept?: () => void;
+      },
     ) => {
       onAfterAcceptRef.current = opts?.onAfterAccept;
-      setContent({ title, message, buttonTitle: opts?.buttonTitle });
+      setContent({
+        title,
+        message,
+        hint: opts?.hint,
+        buttonTitle: opts?.buttonTitle,
+      });
       setVisible(true);
     },
     [],
@@ -48,6 +58,7 @@ export function useInfoDialog() {
       onDismissed={handleDismissed}
       title={content.title}
       message={content.message}
+      hint={content.hint}
       buttonTitle={content.buttonTitle}
       onAccept={handleAccept}
     />

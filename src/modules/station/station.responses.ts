@@ -14,11 +14,12 @@ export interface ConnectorResponse {
   powerKw: string | null;
   price: number | null;
   connectorType: string | null; // Código del tipo de conector (p. ej. "CCS2", "TYPE2")
+  sessionPreparing?: boolean;
 }
 
 export interface ChargePointResponse {
   id: string;
-  name?: string | null;
+  name: string;
   ocppId: string;
   operativeStatus?: OperativeStatus;
   connectionState?: ConnectionState;

@@ -10,7 +10,7 @@ import { ButtonPrimary, ButtonTransparent } from '../../shared/components/ui/but
 import { ConfirmPopup } from '../../shared/components/ui/popup/ConfirmPopup';
 import { SectionLabel } from '../../shared/components/ui/SectionLabel';
 import { PermissionSettingsRow } from '../../shared/components/permissions/PermissionSettingsRow';
-import { PermissionPromptModal } from '../../shared/components/permissions/PermissionPromptModal';
+import { PermissionConfirmPopup } from '../../shared/components/permissions/PermissionConfirmPopup';
 import { usePermissionsStore } from '../../modules/permissions/store/usePermissionsStore';
 import type { PermissionKind } from '../../modules/permissions/types';
 import { registerPushTokenIfGranted } from '../../modules/notifications/push';
@@ -21,6 +21,14 @@ import {
 } from 'firebase/auth';
 import { deleteMe } from '../../modules/user/user';
 import { useAuthStore } from '../../modules/auth/store/userAuthStore';
+import { LegalSettingsRow } from '../../shared/components/legal/LegalSettingsRow';
+import { openLegalDocument } from '../routes/openLegalDocument';
+import {
+  LEGAL_PRIVACY_TITLE,
+  LEGAL_PRIVACY_URL,
+  LEGAL_TERMS_TITLE,
+  LEGAL_TERMS_URL,
+} from '../../shared/config/legal';
 
 export const SettingsScreen = () => {
   const colors = useAppTheme();
@@ -316,7 +324,6 @@ export const SettingsScreen = () => {
         <Layout style={styles.section}>
           <PermissionSettingsRow
             title="Ubicación"
-            description="Centrar el mapa en tu posición y ver estaciones cercanas."
             status={locationStatus}
             isChecking={isCheckingLocation}
             onPress={() => handlePermissionRowPress('location')}
@@ -324,7 +331,6 @@ export const SettingsScreen = () => {
           />
           <PermissionSettingsRow
             title="Cámara"
-            description="Escanear códigos QR para iniciar una sesión de carga."
             status={cameraStatus}
             isChecking={isCheckingCamera}
             onPress={() => handlePermissionRowPress('camera')}
@@ -332,30 +338,27 @@ export const SettingsScreen = () => {
           />
           <PermissionSettingsRow
             title="Notificaciones"
-            description="Avisos sobre reservas y recordatorios de carga."
             status={notificationStatus}
             isChecking={isCheckingNotifications}
             onPress={() => handlePermissionRowPress('notifications')}
             onRefresh={() => void refreshNotificationPermission()}
           />
-          <Layout
-            level="2"
-            style={[
-              styles.securityBlock,
-              {
-                borderColor: colors.border,
-                backgroundColor: securityBlockSurface,
-              },
-            ]}
-          >
-            <Text category="s2" style={{ color: colors.text }}>
-              Biometría
-            </Text>
-            <Text category="p2" style={{ color: colors.textSecondary }}>
-              Se solicita al confirmar pagos con One Click (Face ID o huella).
-              No se puede activar desde la app.
-            </Text>
-          </Layout>
+        </Layout>
+
+        <SectionLabel label="Legal" bleedHorizontal={20} />
+        <Layout style={styles.section}>
+          <LegalSettingsRow
+            title={LEGAL_TERMS_TITLE}
+            onPress={() =>
+              openLegalDocument(LEGAL_TERMS_URL, LEGAL_TERMS_TITLE)
+            }
+          />
+          <LegalSettingsRow
+            title={LEGAL_PRIVACY_TITLE}
+            onPress={() =>
+              openLegalDocument(LEGAL_PRIVACY_URL, LEGAL_PRIVACY_TITLE)
+            }
+          />
         </Layout>
 
         <SectionLabel label="Seguridad" bleedHorizontal={20} />
@@ -453,7 +456,7 @@ export const SettingsScreen = () => {
       </ScrollView>
 
       {permissionPromptConfig ? (
-        <PermissionPromptModal
+        <PermissionConfirmPopup
           visible={activePermissionPrompt != null}
           status={permissionPromptConfig.status}
           disclaimerTitle={permissionPromptConfig.disclaimerTitle}
@@ -488,7 +491,7 @@ export const SettingsScreen = () => {
         {hasPasswordProvider ? (
           <Input
             label="Contraseña"
-            placeholder="••••••••"
+            placeholder="••••••••••••••••"
             value={deletePassword}
             onChangeText={setDeletePassword}
             secureTextEntry

@@ -9,7 +9,6 @@ export interface PreparingSessionCardProps {
   chargePointName: string;
   connectorName: string;
   priceText?: string;
-  departureText?: string;
 }
 
 export const PreparingSessionCard = ({
@@ -17,7 +16,6 @@ export const PreparingSessionCard = ({
   chargePointName,
   connectorName,
   priceText,
-  departureText,
 }: PreparingSessionCardProps) => {
   const colors = useAppTheme();
 
@@ -36,11 +34,6 @@ export const PreparingSessionCard = ({
         >
           {chargePointName} – {connectorName}
         </Text>
-        {departureText != null ? (
-          <Text category="p2" style={[styles.price, { color: colors.textSecondary }]}>
-            {departureText}
-          </Text>
-        ) : null}
         {priceText != null ? (
           <Text category="p2" style={[styles.price, { color: colors.textSecondary }]}>
             {priceText}

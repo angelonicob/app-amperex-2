@@ -1,8 +1,17 @@
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RootStackParams } from '../routes/navigationParams';
 import { useAuthStore } from '../../modules/auth/store/userAuthStore';
+import {
+  bootstrapActiveSession,
+  waitForActiveSessionStoreHydration,
+} from '../../modules/session/sessionBootstrap';
+import {
+  isRestorableActiveSession,
+  navigateForRestoreResult,
+} from '../../modules/session/sessionRestoreUtils';
+import { useActiveSessionStore } from '../../modules/session/store/useActiveSessionStore';
 import { LoadingScreen } from './LoadingScreen';
 
 type Nav = StackNavigationProp<RootStackParams, 'Loading'>;
@@ -10,6 +19,8 @@ type Nav = StackNavigationProp<RootStackParams, 'Loading'>;
 export const LoadingGateScreen = () => {
   const navigation = useNavigation<Nav>();
   const { isAuthenticated, apiStatus, checkAuthStatus } = useAuthStore();
+  const [loadingMessage, setLoadingMessage] = useState<string | undefined>();
+  const bootstrapStartedRef = useRef(false);
 
   useEffect(() => {
     if (isAuthenticated !== 'checking') return;
@@ -22,7 +33,7 @@ export const LoadingGateScreen = () => {
         if (!cancelled) useAuthStore.getState().logout();
       }
     };
-    run();
+    void run();
     return () => {
       cancelled = true;
     };
@@ -30,14 +41,40 @@ export const LoadingGateScreen = () => {
 
   useEffect(() => {
     if (isAuthenticated === 'checking') return;
-    if (isAuthenticated === 'authenticated') {
-      if (apiStatus === 'reachable') navigation.replace('App');
-      else if (apiStatus === 'unreachable') navigation.replace('Offline');
-      else if (apiStatus === 'error') navigation.replace('BackendError');
-    } else {
+
+    if (isAuthenticated !== 'authenticated') {
       navigation.replace('Auth');
+      return;
     }
+
+    if (apiStatus === 'unreachable') {
+      navigation.replace('Offline');
+      return;
+    }
+    if (apiStatus === 'error') {
+      navigation.replace('BackendError');
+      return;
+    }
+    if (apiStatus !== 'reachable') return;
+    if (bootstrapStartedRef.current) return;
+    bootstrapStartedRef.current = true;
+
+    let cancelled = false;
+    const run = async () => {
+      await waitForActiveSessionStoreHydration();
+      const cached = useActiveSessionStore.getState().activeSession;
+      if (isRestorableActiveSession(cached)) {
+        setLoadingMessage('Retomando tu sesión…');
+      }
+      const res = await bootstrapActiveSession();
+      if (cancelled) return;
+      navigateForRestoreResult(res);
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated, apiStatus, navigation]);
 
-  return <LoadingScreen />;
+  return <LoadingScreen message={loadingMessage} />;
 };

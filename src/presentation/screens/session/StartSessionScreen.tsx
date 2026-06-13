@@ -1,7 +1,6 @@
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { Button, Layout, Text, Spinner } from '@ui-kitten/components';
-import type { TextProps } from '@ui-kitten/components/ui/text/text.component';
+import { Layout, Text, Spinner } from '@ui-kitten/components';
 import {
   useCallback,
   useEffect,
@@ -48,12 +47,11 @@ import {
   PLUG_CONNECT_ICON,
 } from '../../../shared/components/layout/EmptyStateLayout';
 import { HeaderFlow } from '../../../shared/components/session/HeaderFlow';
-import { ConnectorInfo } from '../../../shared/components/session/ConnectorInfo';
-import { CarCardVertical } from '../../../shared/components/ui/card';
-import { ButtonPrimary } from '../../../shared/components/ui/button';
+import { CarCardSelect } from '../../../shared/components/ui/card';
+import { ButtonPrimary, ButtonTransparent } from '../../../shared/components/ui/button';
 import type { TimePickerColumnsValue } from '../../../shared/components/session/TimePickerColumns';
 import { ConnectorEndTimeStep } from '../../../shared/components/schedule/ConnectorEndTimeStep';
-import { PreparingSessionCard } from '../../../shared/components/session/PreparingSessionCard';
+import { SessionStartSummary } from '../../../shared/components/session/SessionStartSummary';
 import { SectionSelect } from '../../../shared/components/session/SectionSelect';
 import { MetaCharge } from '../../../shared/components/session/MetaCharge';
 import { ChargeTargetPicker } from '../../../shared/components/session/ChargeTargetPicker';
@@ -63,11 +61,12 @@ import { useSystemChrome } from '../../../shared/hooks/useSystemChrome';
 import {
   buildEndTimeScheduleContext,
   departureTimeValueToDate,
-  formatTimePickerValue,
   validateEndTime,
 } from '../../../shared/utils/connectorSchedule';
+import { formatTimePickerValue } from '../../../shared/utils/departureTime';
 import { navigateToSessionCompletion } from '../../../shared/utils/navigateToSessionCompletion';
 import { formatConnectorCode } from '../../../shared/utils/connectorDisplay';
+import { navigateToQrScanner } from '../../../shared/utils/navigateToQrScanner';
 
 type Nav = StackNavigationProp<SessionStackParams, 'Parámetros'>;
 
@@ -126,8 +125,9 @@ export const StartSessionScreen = () => {
   const [isPlugReady, setIsPlugReady] = useState(false);
   const [lastPlugStatus, setLastPlugStatus] = useState<PlugStatusResponse | null>(null);
   const [plugStatusText, setPlugStatusText] = useState(PLUG_WAIT_HINT);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selectedVehicleIndex, setSelectedVehicleIndex] = useState<number | null>(null);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const prevStepRef = useRef<1 | 2 | 3 | 4>(1);
   const [departureTime, setDepartureTime] = useState<TimePickerColumnsValue | null>(
     null,
   );
@@ -150,6 +150,10 @@ export const StartSessionScreen = () => {
   } = useSessionStore();
   const [departureTimeValid, setDepartureTimeValid] = useState(false);
   const [startAckSessionId, setStartAckSessionId] = useState<string | null>(null);
+  const [sessionPrepInvalidated, setSessionPrepInvalidated] = useState(false);
+  /** correlationId ya no existe en el backend (expiró o se liberó). */
+  const [plugStatusLost, setPlugStatusLost] = useState(false);
+  const isStartingSessionRef = useRef(false);
 
   const colors = useAppTheme();
   const screenBackground = useSystemChrome();
@@ -168,7 +172,7 @@ export const StartSessionScreen = () => {
   } = useSessionWebSocket(startAckSessionId);
 
   useEffect(() => {
-    if (step !== 3) setChargeSection('CLP');
+    if (step !== 3 && step !== 4) setChargeSection('CLP');
   }, [step]);
 
   useFocusEffect(
@@ -193,13 +197,38 @@ export const StartSessionScreen = () => {
 
   const sessionDateKey = useMemo(() => formatLocalDateKey(new Date()), []);
 
-  const openStep2 = useCallback(() => {
+  useEffect(() => {
     if (programmedReservation) {
-      setStep(3);
-      return;
+      setStep(2);
     }
-    setStep(2);
   }, [programmedReservation]);
+
+  useEffect(() => {
+    setSelectedVehicleId(null);
+    setPlugStatusLost(false);
+    setPlugStatusText(PLUG_WAIT_HINT);
+    setIsPlugReady(false);
+    setSessionPrepInvalidated(false);
+  }, [scanQrResponse?.correlationId]);
+
+  useEffect(() => {
+    if (step === 2 && prevStepRef.current === 1) {
+      setSelectedVehicleId(null);
+    }
+    prevStepRef.current = step;
+  }, [step]);
+
+  useEffect(() => {
+    if (!selectedVehicleId) return;
+    if (!vehicles.some((v) => v.id === selectedVehicleId)) {
+      setSelectedVehicleId(null);
+    }
+  }, [vehicles, selectedVehicleId]);
+
+  const advanceFromVehicleStep = useCallback(() => {
+    if (selectedVehicleId == null) return;
+    setStep(3);
+  }, [selectedVehicleId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -216,25 +245,44 @@ export const StartSessionScreen = () => {
 
     const run = async () => {
       if (!scanQrResponse?.correlationId) return;
+      if (isStartingSessionRef.current) return;
       const res = await getPlugStatus(scanQrResponse.correlationId);
-      if (cancelled || !res) return;
+      if (cancelled || isStartingSessionRef.current) return;
+
+      if (!res) {
+        // 404: el backend liberó el correlationId (expiró o desenchufó).
+        setPlugStatusLost(true);
+        if (isPlugReady) {
+          setSessionPrepInvalidated(true);
+        } else {
+          setPlugStatusText('La reserva expiró. Escanea el QR nuevamente.');
+        }
+        return;
+      }
 
       setLastPlugStatus(res);
 
-      if (res.reservationExpiresAt) {
-        const exp = new Date(res.reservationExpiresAt).getTime();
-        if (Date.now() > exp) {
-          setPlugStatusText('La reserva expiró. Escanea el QR nuevamente.');
-          return;
+      if (!isPlugReady) {
+        if (res.reservationExpiresAt) {
+          const exp = new Date(res.reservationExpiresAt).getTime();
+          if (Date.now() > exp) {
+            setPlugStatusText('La reserva expiró. Escanea el QR nuevamente.');
+            return;
+          }
         }
-      }
-
-      if (res.readyToStart) {
-        setIsPlugReady(true);
+        if (res.readyToStart) {
+          setIsPlugReady(true);
+        }
       }
     };
 
-    if (!isPlugReady && scanQrResponse?.correlationId) {
+    if (
+      scanQrResponse?.correlationId &&
+      !isAwaitingStartAck &&
+      !isSubmitting &&
+      !sessionPrepInvalidated &&
+      !plugStatusLost
+    ) {
       run();
       interval = setInterval(run, 1500);
     }
@@ -243,7 +291,14 @@ export const StartSessionScreen = () => {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [isPlugReady, scanQrResponse?.correlationId]);
+  }, [
+    isPlugReady,
+    isAwaitingStartAck,
+    isSubmitting,
+    sessionPrepInvalidated,
+    plugStatusLost,
+    scanQrResponse?.correlationId,
+  ]);
 
   const cancelStartIntent = useCallback(async () => {
     const correlationId = scanQrResponse?.correlationId;
@@ -412,10 +467,10 @@ export const StartSessionScreen = () => {
     };
   }, [lastPlugStatus]);
 
-  const selectedVehicle: Car | null =
-    selectedVehicleIndex != null && vehicles[selectedVehicleIndex]
-      ? vehicles[selectedVehicleIndex]
-      : null;
+  const selectedVehicle: Car | null = useMemo(() => {
+    if (!selectedVehicleId) return null;
+    return vehicles.find((v) => v.id === selectedVehicleId) ?? null;
+  }, [selectedVehicleId, vehicles]);
 
   const handleConfirmDepartureStep = useCallback(() => {
     if (!departureTime || !agenda) {
@@ -440,7 +495,7 @@ export const StartSessionScreen = () => {
       showInfo('Horario inválido', 'El horario seleccionado no está disponible.');
       return;
     }
-    setStep(3);
+    setStep(2);
   }, [
     agenda,
     departureTime,
@@ -460,7 +515,7 @@ export const StartSessionScreen = () => {
   }, [departureTime, programmedReservation?.endAt]);
 
   const handleStartSession = async () => {
-    if (selectedVehicleIndex == null) {
+    if (!selectedVehicle) {
       showInfo('Error', 'Selecciona un vehículo');
       return;
     }
@@ -476,11 +531,7 @@ export const StartSessionScreen = () => {
       return;
     }
 
-    const vehicle = vehicles[selectedVehicleIndex];
-    if (!vehicle) {
-      showInfo('Error', 'Vehículo no válido');
-      return;
-    }
+    const vehicle = selectedVehicle;
 
     const departureTimeIso = resolveDepartureTimeIso();
     if (!departureTimeIso) {
@@ -515,6 +566,7 @@ export const StartSessionScreen = () => {
     }
 
     setIsSubmitting(true);
+    isStartingSessionRef.current = true;
     try {
       setStartAckError(null);
       setStartAckTimedOut(false);
@@ -589,8 +641,17 @@ export const StartSessionScreen = () => {
 
       const response = await startSessionApi(startPayload);
 
+      if (response == null) {
+        const recheck = await getPlugStatus(scanQrResponse.correlationId);
+        if (!recheck) {
+          setSessionPrepInvalidated(true);
+          return;
+        }
+        showInfo('Error', 'No se pudo iniciar la carga');
+        return;
+      }
+
       if (
-        response != null &&
         (response as StartSessionPaymentRequired).paymentRequired === true
       ) {
         await navigateToSessionCompletion(
@@ -599,7 +660,7 @@ export const StartSessionScreen = () => {
         return;
       }
 
-      if (response != null && 'success' in response && response.success) {
+      if ('success' in response && response.success) {
         // Sembrar el store con los parámetros locales (mode + departureTime) para que
         // SessionChargeScreen pueda mostrarlos sin un viaje extra al backend.
         setChargingData({
@@ -623,17 +684,63 @@ export const StartSessionScreen = () => {
     } catch {
       showInfo('Error', 'No se pudo iniciar la sesión');
     } finally {
+      isStartingSessionRef.current = false;
       setIsSubmitting(false);
     }
   };
 
-  const handleGoBack = async () => {
+  const performCancelAndExit = useCallback(async () => {
     await cancelStartIntent();
     useSessionStore.getState().clearSession();
     replaceToRoute('App');
-  };
+  }, [cancelStartIntent]);
+
+  const cableWasConnected =
+    isPlugReady || lastPlugStatus?.readyToStart === true;
+
+  const handleGoBack = useCallback(async () => {
+    if (cableWasConnected) {
+      showInfo(
+        'Antes de salir',
+        'No olvides desconectar el cargador del vehículo.',
+        { onAfterAccept: () => { void performCancelAndExit(); } },
+      );
+      return;
+    }
+    await performCancelAndExit();
+  }, [cableWasConnected, performCancelAndExit, showInfo]);
+
+  const handleScanQrAgain = useCallback(() => {
+    useSessionStore.getState().clearSession();
+    navigateToQrScanner();
+  }, []);
 
   const pricePerKwh = lastPlugStatus?.connector?.price ?? 0;
+
+  const advanceFromChargeStep = useCallback(() => {
+    if (selectedVehicleId == null) return;
+    if (chargeSection === 'CLP') {
+      const clp = parseInt(amountClp.replace(/\D/g, ''), 10);
+      if (!Number.isFinite(clp) || clp <= 0) {
+        showInfo('Error', 'Ingresa un monto válido en CLP.');
+        return;
+      }
+      if (pricePerKwh <= 0) {
+        showInfo(
+          'Sin tarifa',
+          'Este conector no tiene precio por kWh; no se puede limitar la carga por monto.',
+        );
+        return;
+      }
+    } else if (chargeSection === 'ENERGY') {
+      const energy = toFiniteNumber(energyKw);
+      if (energy == null || energy <= 0) {
+        showInfo('Error', 'Ingresa una cantidad de energía válida (kWh).');
+        return;
+      }
+    }
+    setStep(4);
+  }, [selectedVehicleId, chargeSection, amountClp, energyKw, pricePerKwh, showInfo]);
 
   const scrollToChargeInput = useCallback(() => {
     setTimeout(() => {
@@ -644,10 +751,82 @@ export const StartSessionScreen = () => {
   const stepScrollContentStyle = useMemo(
     () => [
       styles.stepContent,
-      step === 3 ? styles.stepContentConfirm : styles.stepContentCentered,
+      styles.stepContentWithFooter,
+      step === 1 && styles.stepContentFill,
+      step === 2 && styles.stepContentCentered,
+      step === 3 && styles.stepContentCharge,
+      step === 4 && styles.stepContentConfirm,
     ],
     [step],
   );
+
+  const formatClp = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '$0';
+    const withDots = digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `$${withDots}`;
+  };
+
+  const clpAmountNumber = parseInt(amountClp.replace(/\D/g, ''), 10);
+  const clpAmountValid = Number.isFinite(clpAmountNumber) && clpAmountNumber > 0;
+  const energyKwhNumber = toFiniteNumber(energyKw);
+  const energyKwhValid = energyKwhNumber != null && energyKwhNumber > 0;
+
+  const clpTargetEstimate =
+    clpAmountValid && pricePerKwh > 0
+      ? `Energía estimada: ~${(clpAmountNumber / pricePerKwh).toFixed(1)} kWh`
+      : pricePerKwh <= 0
+        ? 'Sin tarifa configurada para este conector'
+        : null;
+  const energyTargetEstimate =
+    energyKwhValid && pricePerKwh > 0
+      ? `Costo estimado: ~${formatClp(String(Math.round((energyKwhNumber as number) * pricePerKwh)))}`
+      : pricePerKwh <= 0
+        ? 'Sin tarifa configurada para este conector'
+        : null;
+
+  const departureSummaryLabel = useMemo(() => {
+    if (programmedReservation?.endAtLocal) {
+      return programmedReservation.endAtLocal.slice(11, 16);
+    }
+    if (departureTime) return formatTimePickerValue(departureTime);
+    return '—';
+  }, [departureTime, programmedReservation?.endAtLocal]);
+
+  const chargeModeLabel = useMemo(() => {
+    if (chargeSection === 'FULL') return 'Carga total';
+    if (chargeSection === 'CLP') return 'Monto en CLP';
+    return 'Energía (kWh)';
+  }, [chargeSection]);
+
+  const chargeTargetLabel = useMemo(() => {
+    if (chargeSection === 'FULL') return 'Hasta carga completa';
+    if (chargeSection === 'CLP') return formatClp(amountClp);
+    const n = toFiniteNumber(energyKw);
+    return n != null ? `${n} kWh` : '—';
+  }, [chargeSection, amountClp, energyKw]);
+
+  const chargeEstimateLabel = useMemo(() => {
+    if (chargeSection === 'CLP') return clpTargetEstimate;
+    if (chargeSection === 'ENERGY') return energyTargetEstimate;
+    return null;
+  }, [chargeSection, clpTargetEstimate, energyTargetEstimate]);
+
+  if (sessionPrepInvalidated) {
+    return wrap(
+      <EmptyStateLayout
+        fullScreen
+        title="Verifica la conexión del cargador"
+        subtitle="Asegúrate de que el cable esté bien enchufado al vehículo y al punto de carga."
+        hint="Si desconectaste el cargador mientras preparabas la sesión, debes desconectarlo por completo y escanear el QR nuevamente."
+        icon={PLUG_CONNECT_ICON}
+        action={{
+          label: 'Escanear QR',
+          onPress: handleScanQrAgain,
+        }}
+      />,
+    );
+  }
 
   if (!isPlugReady) {
     const isReservationExpired = plugStatusText.includes('expiró');
@@ -724,14 +903,12 @@ export const StartSessionScreen = () => {
               style={styles.primaryButton}
             />
           ) : null}
-          <Button
-            appearance="outline"
-            status="danger"
+          <ButtonTransparent
+            title="Cancelar"
             onPress={handleGoBack}
+            color={colors.danger}
             style={styles.secondaryButton}
-          >
-            Cancelar
-          </Button>
+          />
         </Layout>
         </Layout>
       </SafeAreaView>,
@@ -755,11 +932,9 @@ export const StartSessionScreen = () => {
           <ButtonPrimary
             title="Volver"
             onPress={async () => {
-              await cancelStartIntent();
               setStartAckError(null);
               setIsAwaitingStartAck(false);
-              useSessionStore.getState().clearSession();
-              replaceToRoute('App');
+              await handleGoBack();
             }}
             style={styles.primaryButton}
           />
@@ -769,21 +944,17 @@ export const StartSessionScreen = () => {
     );
   }
 
-  const stepTitles: Record<1 | 2 | 3, { title: string; subtitle: string }> = {
-    1: {
-      title: programmedReservation ? 'Reserva programada' : 'Seleccionar Vehículo',
-      subtitle: programmedReservation
-        ? 'Selecciona el vehículo que vas a cargar'
-        : 'Selecciona tu vehículo a cargar',
-    },
-    2: {
-      title: 'Seleccionar Horario',
-      subtitle: 'Elige tu horario de salida',
-    },
-    3: {
-      title: 'Confirmar',
-      subtitle: 'Revisa y inicia la carga',
-    },
+  const stepTitles: Record<1 | 2 | 3 | 4, string> = {
+    1: 'Horario de salida',
+    2: programmedReservation ? 'Reserva programada' : 'Seleccionar Vehículo',
+    3: 'Modo de carga',
+    4: 'Confirmar',
+  };
+
+  const stepSubtitles: Partial<Record<1 | 2 | 3 | 4, string>> = {
+    1: 'Selecciona cuándo retirarás el vehículo del conector',
+    3: 'Define cómo quieres limitar la sesión de carga',
+    4: 'Revisa los datos antes de iniciar la carga',
   };
 
   const sections = [
@@ -792,31 +963,13 @@ export const StartSessionScreen = () => {
     { id: 'FULL' as const, label: 'Carga total' },
   ];
 
-  const formatClp = (raw: string): string => {
-    const digits = raw.replace(/\D/g, '');
-    if (!digits) return '$0';
-    const withDots = digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    return `$${withDots}`;
-  };
-
-  const clpAmountNumber = parseInt(amountClp.replace(/\D/g, ''), 10);
-  const clpAmountValid = Number.isFinite(clpAmountNumber) && clpAmountNumber > 0;
-  const energyKwhNumber = toFiniteNumber(energyKw);
-  const energyKwhValid = energyKwhNumber != null && energyKwhNumber > 0;
-
-  /** Estimado recíproco: si el target es CLP mostramos kWh; si es energía mostramos CLP. */
-  const clpTargetEstimate =
-    clpAmountValid && pricePerKwh > 0
-      ? `Energía estimada: ~${(clpAmountNumber / pricePerKwh).toFixed(1)} kWh`
-      : pricePerKwh <= 0
-        ? 'Sin tarifa configurada para este conector'
-        : null;
-  const energyTargetEstimate =
-    energyKwhValid && pricePerKwh > 0
-      ? `Costo estimado: ~${formatClp(String(Math.round((energyKwhNumber as number) * pricePerKwh)))}`
-      : pricePerKwh <= 0
-        ? 'Sin tarifa configurada para este conector'
-        : null;
+  const connectorSummaryName = formatConnectorCode(
+    lastPlugStatus?.connector?.connectorType ??
+      (scanQrResponse as { connector?: { connectorType?: string } })?.connector
+        ?.connectorType ??
+      null,
+    lastPlugStatus?.connector?.connectorNumber,
+  );
 
   return wrap(
     <SafeAreaView
@@ -831,32 +984,19 @@ export const StartSessionScreen = () => {
       >
         <View style={styles.stickyHeader}>
           <HeaderFlow
-            title={stepTitles[step].title}
-            subtitle={stepTitles[step].subtitle}
+            title={stepTitles[step]}
+            subtitle={stepSubtitles[step]}
+            onClose={step === 1 ? handleGoBack : undefined}
             onBack={
-              step > 1
-                ? () =>
-                    setStep((s) => {
-                      if (s === 3 && programmedReservation) return 1;
-                      return (s - 1) as 1 | 2 | 3;
-                    })
+              step > 1 && !(step === 2 && programmedReservation)
+                ? () => setStep((s) => (s - 1) as 1 | 2 | 3 | 4)
                 : undefined
             }
           />
         </View>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.flex1}
-          contentContainerStyle={stepScrollContentStyle}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.stepInner}>
-            {(step === 1 || step === 2) && (
-              <ConnectorInfo {...connectorInfoProps} />
-            )}
+        {step === 1 ? (
+          <View style={[styles.flex1, styles.stepViewport, stepScrollContentStyle]}>
+            <View style={[styles.stepInner, styles.stepInnerFill, styles.stepInnerStep1]}>
             {programmedReservation && programmedWindowLabel ? (
               <View
                 style={[
@@ -875,62 +1015,70 @@ export const StartSessionScreen = () => {
                 </Text>
               </View>
             ) : null}
-            {step === 1 && (
-              <>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.cardsScroll}
-                  contentContainerStyle={styles.cardsRow}
-                >
-                  {vehicles.map((v, i) => (
-                    <CarCardVertical
-                      key={v.id}
-                      vehicle={v}
-                      selected={selectedVehicleIndex === i}
-                      onSelect={() =>
-                        setSelectedVehicleIndex((prev) => (prev === i ? null : i))
-                      }
-                    />
-                  ))}
-                </ScrollView>
-              </>
-            )}
-
-            {step === 2 && connectorId ? (
-              <ConnectorEndTimeStep
-                mode="session"
-                connectorId={connectorId}
-                dateKey={sessionDateKey}
-                stationName={scanQrResponse?.station?.name}
-                programmedReservation={programmedReservation}
-                currentUserId={scanQrResponse?.user?.id}
-                value={departureTime}
-                onChange={setDepartureTime}
-                onValidityChange={setDepartureTimeValid}
-              />
+            {connectorId ? (
+              <View style={styles.step1ScheduleFill}>
+                <ConnectorEndTimeStep
+                  mode="session"
+                  connectorId={connectorId}
+                  dateKey={sessionDateKey}
+                  stationName={scanQrResponse?.station?.name}
+                  connectorType={connectorInfoProps.connectorType}
+                  programmedReservation={programmedReservation}
+                  currentUserId={scanQrResponse?.user?.id}
+                  value={departureTime}
+                  onChange={setDepartureTime}
+                  onValidityChange={setDepartureTimeValid}
+                />
+              </View>
+            ) : null}
+            </View>
+          </View>
+        ) : (
+        <ScrollView
+          ref={scrollRef}
+          style={styles.flex1}
+          contentContainerStyle={stepScrollContentStyle}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.stepInner}>
+            {programmedReservation && programmedWindowLabel ? (
+              <View
+                style={[
+                  styles.programmedBanner,
+                  {
+                    backgroundColor: colors.backgroundTertiary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text category="s1" style={{ color: colors.text }}>
+                  Tienes una reserva activa
+                </Text>
+                <Text appearance="hint" style={styles.programmedBannerHint}>
+                  Horario {programmedWindowLabel}. Conecta en el conector asignado.
+                </Text>
+              </View>
             ) : null}
 
-            {step === 3 && selectedVehicle && (
+            {step === 2 ? (
+              <View style={styles.vehiclesList}>
+                {vehicles.map((v, i) => (
+                  <CarCardSelect
+                    key={v.id}
+                    vehicle={v}
+                    selected={selectedVehicleId === v.id}
+                    showTopSeparator={i > 0}
+                    onSelect={() => setSelectedVehicleId(v.id)}
+                  />
+                ))}
+              </View>
+            ) : null}
+
+            {step === 3 && selectedVehicle ? (
               <>
-                <PreparingSessionCard
-                  vehicle={selectedVehicle}
-                  chargePointName={scanQrResponse?.chargePoint?.ocppId ?? '—'}
-                  connectorName={formatConnectorCode(
-                    lastPlugStatus?.connector?.connectorType ??
-                      (scanQrResponse as any)?.connector?.connectorType ??
-                      null,
-                    lastPlugStatus?.connector?.connectorNumber,
-                  )}
-                  departureText={
-                    departureTime != null
-                      ? `Salida: ${formatTimePickerValue(departureTime)}`
-                      : undefined
-                  }
-                  priceText={
-                    pricePerKwh > 0 ? `$${pricePerKwh} / kWh` : undefined
-                  }
-                />
                 <SectionSelect
                   sections={sections}
                   activeId={chargeSection}
@@ -951,7 +1099,6 @@ export const StartSessionScreen = () => {
                     placeholder="Monto en pesos (CLP)"
                     keyboardType="numeric"
                     onInputFocus={scrollToChargeInput}
-                    estimate={clpTargetEstimate}
                   />
                 )}
                 {chargeSection === 'ENERGY' && (
@@ -969,7 +1116,6 @@ export const StartSessionScreen = () => {
                     placeholder="Energía en kWh"
                     keyboardType="decimal-pad"
                     onInputFocus={scrollToChargeInput}
-                    estimate={energyTargetEstimate}
                   />
                 )}
                 {chargeSection === 'FULL' && (
@@ -978,91 +1124,82 @@ export const StartSessionScreen = () => {
                   </View>
                 )}
               </>
-            )}
+            ) : null}
 
-            {(step === 1 || step === 2) && (
-              <View style={styles.footer}>
-                <View style={styles.dots}>
-                  {[1, 2, 3].map((i) => (
-                    <View
-                      key={i}
-                      style={[
-                        styles.dot,
-                        {
-                          backgroundColor:
-                            step >= i ? colors.primary : colors.borderDark,
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-                {step === 1 && (
-                  <ButtonPrimary
-                    title="Siguiente"
-                    onPress={openStep2}
-                    disabled={selectedVehicleIndex == null}
-                    style={styles.stepButton}
-                  />
-                )}
-                {step === 2 && (
-                  <ButtonPrimary
-                    title="Confirmar Salida"
-                    onPress={handleConfirmDepartureStep}
-                    disabled={!departureTimeValid || !connectorId}
-                    style={styles.stepButton}
-                  />
-                )}
-                <Button
-                  appearance="ghost"
-                  status="basic"
-                  onPress={handleGoBack}
-                  style={styles.footerGhostCancel}
-                >
-                  {(evaProps: TextProps) => (
-                    <Text
-                      {...evaProps}
-                      style={[evaProps.style, { color: colors.danger }]}
-                    >
-                      Cancelar
-                    </Text>
-                  )}
-                </Button>
-              </View>
-            )}
+            {step === 4 && selectedVehicle ? (
+              <SessionStartSummary
+                stationName={scanQrResponse?.station?.name}
+                chargePointName={scanQrResponse?.chargePoint?.ocppId ?? '—'}
+                connectorName={connectorSummaryName}
+                departureLabel={departureSummaryLabel}
+                vehicle={selectedVehicle}
+                chargeModeLabel={chargeModeLabel}
+                chargeTargetLabel={chargeTargetLabel}
+                priceText={
+                  pricePerKwh > 0 ? `$${pricePerKwh} / kWh` : undefined
+                }
+                estimateText={chargeEstimateLabel}
+              />
+            ) : null}
+
           </View>
         </ScrollView>
-        {step === 3 && selectedVehicle ? (
-          <View
-            style={[
-              styles.stickyBottom,
-              {
-                backgroundColor: screenBackground,
-                borderTopColor: colors.border,
-              },
-            ]}
-          >
-            <View style={styles.dots}>
-              {[1, 2, 3].map((i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.dot,
-                    {
-                      backgroundColor:
-                        step >= i ? colors.primary : colors.borderDark,
-                    },
-                  ]}
-                />
-              ))}
-            </View>
+        )}
+        <View
+          style={[
+            styles.stickyBottom,
+            {
+              backgroundColor: screenBackground,
+              borderTopColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.dots}>
+            {[1, 2, 3, 4].map((i) => (
+              <View
+                key={i}
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor:
+                      step >= i ? colors.primary : colors.borderDark,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+          {step === 1 ? (
+            <ButtonPrimary
+              title="Siguiente"
+              onPress={handleConfirmDepartureStep}
+              disabled={!departureTimeValid || !connectorId}
+              style={styles.stepButton}
+            />
+          ) : null}
+          {step === 2 ? (
+            <ButtonPrimary
+              title="Siguiente"
+              onPress={advanceFromVehicleStep}
+              disabled={selectedVehicleId == null}
+              style={styles.stepButton}
+            />
+          ) : null}
+          {step === 3 && selectedVehicle ? (
+            <ButtonPrimary
+              title="Siguiente"
+              onPress={advanceFromChargeStep}
+              style={styles.stepButton}
+            />
+          ) : null}
+          {step === 4 && selectedVehicle ? (
             <ButtonPrimary
               title={isSubmitting ? 'Enviando...' : 'Iniciar carga'}
               onPress={handleStartSession}
               disabled={isSubmitting}
-              style={styles.primaryButton}
+              style={styles.stepButton}
             />
-          </View>
-        ) : null}
+          ) : null}
+        </View>
       </KeyboardAvoidingView>
       </Layout>
     </SafeAreaView>,
@@ -1084,13 +1221,36 @@ const styles = StyleSheet.create({
     padding: 20,
     flexGrow: 1,
   },
+  stepContentFill: {
+    flex: 1,
+  },
+  stepInnerStep1: {
+    gap: 12,
+  },
   stepContentCentered: {
-    paddingBottom: 32,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  stepViewport: {
+    minHeight: 0,
+  },
+  stepInnerFill: {
+    flex: 1,
+    minHeight: 0,
+  },
+  step1ScheduleFill: {
+    flex: 1,
+    minHeight: 0,
+    width: '100%',
+  },
+  stepContentWithFooter: {
+    paddingBottom: 172,
+  },
+  stepContentCharge: {
+    alignItems: 'center',
+  },
   stepContentConfirm: {
-    paddingBottom: 240,
+    paddingBottom: 220,
     alignItems: 'center',
   },
   stepInner: {
@@ -1099,7 +1259,6 @@ const styles = StyleSheet.create({
   },
   stickyHeader: {
     width: '100%',
-    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
   },
@@ -1124,28 +1283,17 @@ const styles = StyleSheet.create({
   programmedBannerHint: {
     lineHeight: 20,
   },
-  cardsScroll: {
+  vehiclesList: {
     marginHorizontal: -20,
-    paddingHorizontal: 20,
-  },
-  cardsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingVertical: 8,
+    width: '100%',
   },
   sectionContent: {
     width: '100%',
     gap: 12,
     alignItems: 'center',
   },
-  primaryButton: { width: '100%', marginTop: 8 },
+  primaryButton: { width: '100%' },
   secondaryButton: { width: '100%', marginTop: 12 },
-  footer: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    gap: 16,
-  },
   dots: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -1157,8 +1305,4 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   stepButton: { width: '100%' },
-  footerGhostCancel: {
-    width: '100%',
-    marginTop: -4,
-  },
 });

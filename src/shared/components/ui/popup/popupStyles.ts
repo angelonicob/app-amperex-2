@@ -24,8 +24,14 @@ export const popupTemplateStyles = StyleSheet.create({
   },
   body: {
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
     lineHeight: 22,
+  },
+  hint: {
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
+    fontSize: 12,
   },
   button: {
     width: '100%',

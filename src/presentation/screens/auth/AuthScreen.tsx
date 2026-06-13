@@ -38,6 +38,7 @@ import {
 import { useAuthStore } from '../../../modules/auth/store/userAuthStore';
 import { api } from '../../../infrastructure/http/Api';
 import { isAxiosError } from 'axios';
+import { TermsAcceptanceRow } from '../../../shared/components/legal/TermsAcceptanceRow';
 
 const PANEL_TIMING_MS = 260;
 
@@ -69,6 +70,7 @@ export const AuthScreen = () => {
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [forgotStep, setForgotStep] = useState<ForgotStep>('email');
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const { completeEmailPasswordLogin } = useAuthStore();
 
   const isExpandedRef = useRef(false);
@@ -79,6 +81,12 @@ export const AuthScreen = () => {
   useEffect(() => {
     setWarningMessage(null);
   }, [email, password, firstName, lastName, authMode, sheetPhase]);
+
+  useEffect(() => {
+    if (authMode === 'signin') {
+      setTermsAccepted(false);
+    }
+  }, [authMode]);
 
   const usableHeight = Math.max(0, windowHeight - insets.top);
   const collapsedTranslateY =
@@ -204,6 +212,12 @@ export const AuthScreen = () => {
       return;
     }
     if (authMode === 'register') {
+      if (!termsAccepted) {
+        setWarningMessage(
+          'Debes aceptar la política de privacidad y los términos de uso.',
+        );
+        return;
+      }
       const fn = firstName.trim();
       const ln = lastName.trim();
       if (!fn || !ln) {
@@ -233,6 +247,7 @@ export const AuthScreen = () => {
     password,
     firstName,
     lastName,
+    termsAccepted,
     completeEmailPasswordLogin,
   ]);
 
@@ -300,9 +315,12 @@ export const AuthScreen = () => {
   const formTitle =
     authMode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta';
   const formSubtitle = 'Ingresa tus datos a continuación';
+  const registerBlocked = authMode === 'register' && !termsAccepted;
   const primaryLabel =
     isPosting
-      ? 'Iniciando sesión…'
+      ? authMode === 'signin'
+        ? 'Iniciando sesión…'
+        : 'Registrando…'
       : authMode === 'signin'
         ? 'Iniciar sesión'
         : 'Registrarme';
@@ -560,10 +578,18 @@ export const AuthScreen = () => {
                 </>
               ) : null}
 
+              {authMode === 'register' ? (
+                <TermsAcceptanceRow
+                  checked={termsAccepted}
+                  onCheckedChange={setTermsAccepted}
+                  disabled={isPosting}
+                />
+              ) : null}
+
               <ButtonPrimary
                 title={primaryLabel}
                 onPress={() => void onSubmit()}
-                disabled={isPosting}
+                disabled={isPosting || registerBlocked}
                 style={styles.primaryBtn}
               />
             </>

@@ -1,7 +1,7 @@
 /**
  * Registro de push token y listeners. No solicita permisos del SO.
  */
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { getNotificationPermissionDetail } from '../permissions/notifications';
 import { registerPushToken } from './api';
 import { useReservationConfirmStore } from '../reservation/store/useReservationConfirmStore';
@@ -9,6 +9,7 @@ import { navigateToSessionCompletion } from '../../shared/utils/navigateToSessio
 
 let pushRegistered = false;
 let responseListenerRegistered = false;
+let notificationHandlerConfigured = false;
 
 const RESERVATION_PUSH_TYPES = new Set([
   'reservation_reminder_2h',
@@ -18,6 +19,12 @@ const RESERVATION_PUSH_TYPES = new Set([
 ]);
 
 const SESSION_PUSH_TYPES = new Set(['charging_session_finished']);
+
+/** No mostrar banner/sonido si la app está en primer plano (el usuario ya la está viendo). */
+const FOREGROUND_SUPPRESSED_PUSH_TYPES = new Set([
+  'charging_session_finished',
+  'reservation_charge_complete_early',
+]);
 
 function extractReservationId(data: unknown): string | null {
   if (data == null || typeof data !== 'object') return null;
@@ -46,6 +53,15 @@ function extractPushType(
     return String((contentData as Record<string, unknown>).type);
   }
   return '';
+}
+
+function shouldSuppressForegroundNotification(
+  data: Record<string, unknown> | undefined,
+  contentData: unknown,
+): boolean {
+  if (AppState.currentState !== 'active') return false;
+  const type = extractPushType(data, contentData);
+  return FOREGROUND_SUPPRESSED_PUSH_TYPES.has(type);
 }
 
 export function setupReservationPushResponseListener(): void {
@@ -79,19 +95,27 @@ export function setupReservationPushResponseListener(): void {
   }
 }
 
-function configureNotificationHandler(): void {
+/** Configura el handler de notificaciones en primer plano (idempotente). */
+export function configurePushNotificationHandler(): void {
+  if (notificationHandlerConfigured) return;
   try {
     const Notifications = require('expo-notifications') as typeof import('expo-notifications');
     if (!Notifications?.setNotificationHandler) return;
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
+      handleNotification: async (notification) => {
+        const content = notification.request.content;
+        const data = content.data as Record<string, unknown> | undefined;
+        const suppress = shouldSuppressForegroundNotification(data, content.data);
+        return {
+          shouldShowAlert: !suppress,
+          shouldPlaySound: !suppress,
+          shouldSetBadge: !suppress,
+          shouldShowBanner: !suppress,
+          shouldShowList: !suppress,
+        };
+      },
     });
+    notificationHandlerConfigured = true;
   } catch {
     // expo-notifications no disponible
   }
@@ -108,7 +132,7 @@ export async function registerPushTokenIfGranted(): Promise<void> {
     }
     if (!Notifications?.getPermissionsAsync) return;
 
-    configureNotificationHandler();
+    configurePushNotificationHandler();
 
     const { status } = await getNotificationPermissionDetail();
     if (status !== 'granted') {

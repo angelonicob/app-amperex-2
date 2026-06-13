@@ -1,30 +1,32 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
-} from 'react-native';
-import { Text } from '@ui-kitten/components';
-import { useReservationStore } from '../../../modules/reservation/store/useReservationStore';
-import type { ProgrammedReservationScan } from '../../../modules/session/scanQr';
-import { useAppTheme } from '../../theme/useAppTheme';
+} from "react-native";
+import { Text } from "@ui-kitten/components";
+import { FontAwesome6 } from "@expo/vector-icons";
+import { useReservationStore } from "../../../modules/reservation/store/useReservationStore";
+import type { ProgrammedReservationScan } from "../../../modules/session/scanQr";
+import { useAppTheme } from "../../theme/useAppTheme";
 import {
   TimePickerColumns,
   type TimePickerColumnsValue,
-} from '../session/TimePickerColumns';
+} from "../session/TimePickerColumns";
 import {
   buildEndTimeScheduleContext,
   clampEndTime,
-  formatEndTimeRangeLabel,
-  formatEndTimeSummary,
+  formatEndTimeMaxAvailableLabel,
   formatLimitHintMessage,
   getEndTimeBounds,
   isEndTimePickerOptionValid,
   isEndTimePickerValueValid,
   resolveEndTimeForStep,
   type ScheduleMode,
-} from '../../utils/connectorSchedule';
+} from "../../utils/connectorSchedule";
 
 export interface ConnectorEndTimeStepProps {
   mode: ScheduleMode;
@@ -32,6 +34,7 @@ export interface ConnectorEndTimeStepProps {
   dateKey: string;
   stationName?: string;
   connectorLabel?: string;
+  connectorType?: string;
   fixedStartAtUtc?: string;
   programmedReservation?: ProgrammedReservationScan | null;
   currentUserId?: string | null;
@@ -48,6 +51,7 @@ export function ConnectorEndTimeStep({
   dateKey,
   stationName,
   connectorLabel,
+  connectorType,
   fixedStartAtUtc,
   programmedReservation,
   currentUserId,
@@ -57,6 +61,8 @@ export function ConnectorEndTimeStep({
   fixedStartLabel,
 }: ConnectorEndTimeStepProps) {
   const colors = useAppTheme();
+  const { height: windowHeight } = useWindowDimensions();
+  const hoursBandMaxHeight = Math.max(128, Math.min(Math.round(windowHeight * 0.34), 220));
   const agenda = useReservationStore((s) => s.agenda);
   const loadingAgenda = useReservationStore((s) => s.loadingAgenda);
   const loadAgenda = useReservationStore((s) => s.loadAgenda);
@@ -67,7 +73,7 @@ export function ConnectorEndTimeStep({
   }, [connectorId, dateKey, loadAgenda]);
 
   useEffect(() => {
-    if (mode !== 'session') return;
+    if (mode !== "session") return;
     const id = setInterval(() => setScheduleTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, [mode]);
@@ -109,7 +115,7 @@ export function ConnectorEndTimeStep({
   }, [minMinutes24, maxMinutes24]);
 
   const isOptionValid = useCallback(
-    (hour: number, minute: number, ampm: 'AM' | 'PM') => {
+    (hour: number, minute: number, ampm: "AM" | "PM") => {
       if (!scheduleContext || !pickerBounds) return true;
       return isEndTimePickerOptionValid(
         hour,
@@ -129,7 +135,9 @@ export function ConnectorEndTimeStep({
         onChange(next);
         return;
       }
-      onChange(clampEndTime(next, scheduleContext, pickerBounds, currentUserId));
+      onChange(
+        clampEndTime(next, scheduleContext, pickerBounds, currentUserId),
+      );
     },
     [onChange, scheduleContext, pickerBounds, currentUserId],
   );
@@ -166,18 +174,16 @@ export function ConnectorEndTimeStep({
     }
   }, [scheduleContext, pickerBounds, currentUserId, value, onChange]);
 
-  const summary = useMemo(() => {
-    if (!value || !scheduleContext) return null;
-    return formatEndTimeSummary(value, scheduleContext);
-  }, [value, scheduleContext]);
-
   const limitMessage = useMemo(() => {
     if (!boundsResult || !scheduleContext) return null;
     return formatLimitHintMessage(boundsResult, scheduleContext.graceMinutes);
   }, [boundsResult, scheduleContext]);
 
   const programmedWindowLabel = useMemo(() => {
-    if (!programmedReservation?.startAtLocal || !programmedReservation?.endAtLocal) {
+    if (
+      !programmedReservation?.startAtLocal ||
+      !programmedReservation?.endAtLocal
+    ) {
       return null;
     }
     return `${programmedReservation.startAtLocal.slice(11, 16)} – ${programmedReservation.endAtLocal.slice(11, 16)}`;
@@ -209,99 +215,151 @@ export function ConnectorEndTimeStep({
     );
   }
 
-  const rangeLabel = formatEndTimeRangeLabel(pickerBounds);
+  const maxDepartureLabel = formatEndTimeMaxAvailableLabel(boundsResult);
   const hasSlots = boundsResult.minMinutes24 <= boundsResult.maxMinutes24;
 
   return (
     <View style={styles.root}>
       <View
-        style={[
-          styles.hoursBand,
-          { backgroundColor: colors.backgroundTertiary },
-        ]}
+        style={[styles.hoursBandContainer, { maxHeight: hoursBandMaxHeight }]}
       >
-        {stationName ? (
-          <Text category="s1" style={[styles.bandTitle, { color: colors.text }]}>
-            {stationName}
-          </Text>
+        <ScrollView
+          style={[styles.hoursBandScroll, { maxHeight: hoursBandMaxHeight }]}
+          contentContainerStyle={[
+            styles.hoursBand,
+            { backgroundColor: colors.backgroundTertiary },
+          ]}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+        >
+        {stationName || connectorType || connectorLabel ? (
+          <View style={styles.stationRow}>
+            {stationName ? (
+              <Text
+                category="s1"
+                numberOfLines={1}
+                style={[styles.bandTitle, styles.stationName, { color: colors.text }]}
+              >
+                {stationName}
+              </Text>
+            ) : null}
+            {connectorType || connectorLabel ? (
+              <Text
+                category="s1"
+                numberOfLines={1}
+                style={[styles.connectorType, { color: colors.primary }]}
+              >
+                {connectorType ?? connectorLabel}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
-        {connectorLabel ? (
-          <Text category="c1" style={{ color: colors.textSecondary }}>
-            {connectorLabel}
+        <Text style={styles.scheduleLine}>
+          <Text style={[styles.scheduleLabel, { color: colors.textSecondary }]}>
+            Horario de la estación:{" "}
           </Text>
-        ) : null}
-        <Text category="c1" style={{ color: colors.textSecondary }}>
-          Horario operativo: {scheduleContext.stationWindow.openAt} –{' '}
-          {scheduleContext.stationWindow.closeAt}
+          <Text style={[styles.scheduleValue, { color: colors.text }]}>
+            {scheduleContext.stationWindow.openAt} –{" "}
+            {scheduleContext.stationWindow.closeAt}
+          </Text>
         </Text>
-        <Text category="c1" style={{ color: colors.textSecondary }}>
-          Salida disponible: {rangeLabel}
+        <Text style={styles.scheduleLine}>
+          <Text style={[styles.scheduleLabel, { color: colors.textSecondary }]}>
+            Hora máxima de salida:{" "}
+          </Text>
+          <Text style={[styles.scheduleHighlight, { color: colors.primary }]}>
+            {maxDepartureLabel}
+          </Text>
         </Text>
-        <Text category="c1" style={{ color: colors.textSecondary }}>
-          Una vez sea el horario de salida, tendrás {scheduleContext.graceMinutes} min para retirar el vehículo.
-        </Text>
+        <View
+          style={[
+            styles.graceNotice,
+            {
+              backgroundColor: colors.isDark
+                ? "rgba(255, 170, 0, 0.14)"
+                : "rgba(255, 170, 0, 0.12)",
+            },
+          ]}
+        >
+          <FontAwesome6
+            name="circle-info"
+            size={14}
+            color={colors.warning}
+            iconStyle="solid"
+            style={styles.graceNoticeIcon}
+          />
+          <Text
+            category="c1"
+            style={[
+              styles.graceNoticeText,
+              { color: colors.isDark ? "#E6B84D" : "#92600A" },
+            ]}
+          >
+            Tendrás {scheduleContext.graceMinutes} min para retirar el vehículo,
+            una vez termine la sesión de carga.
+          </Text>
+        </View>
         {fixedStartLabel ? (
           <Text category="c1" style={{ color: colors.text, marginTop: 4 }}>
             Inicio: {fixedStartLabel}
           </Text>
         ) : null}
         {programmedWindowLabel ? (
-          <Text category="c1" style={{ color: colors.textSecondary, marginTop: 4 }}>
+          <Text
+            category="c1"
+            style={{ color: colors.textSecondary, marginTop: 4 }}
+          >
             Ventana de tu reserva: {programmedWindowLabel}
           </Text>
         ) : null}
+        </ScrollView>
       </View>
 
-      {limitMessage ? (
-        <Text category="c1" style={[styles.limitHint, { color: colors.textSecondary }]}>
-          {limitMessage}
-        </Text>
-      ) : null}
+      <View style={styles.pickerArea}>
+        {limitMessage ? (
+          <Text
+            category="c1"
+            style={[styles.limitHint, { color: colors.textSecondary }]}
+          >
+            {limitMessage}
+          </Text>
+        ) : null}
 
-      {hasSlots && value != null ? (
-        <TimePickerColumns
-          value={value}
-          onChange={handleChange}
-          bounds={pickerBounds}
-          isOptionValid={isOptionValid}
-        />
-      ) : null}
+        <View style={styles.pickerSlot}>
+          {hasSlots && value != null ? (
+            <TimePickerColumns
+              value={value}
+              onChange={handleChange}
+              bounds={pickerBounds}
+              isOptionValid={isOptionValid}
+            />
+          ) : null}
 
-      {!hasSlots ? (
-        <Text category="c1" style={[styles.error, { color: colors.danger }]}>
-          No hay horarios de salida válidos. La estación cierra a las{' '}
-          {scheduleContext.stationWindow.closeAt}.
-        </Text>
-      ) : null}
-
-      {summary && value != null ? (
-        <View style={styles.summaryBlock}>
-          <Text category="c1" style={{ color: colors.text }}>
-            Salida planificada:{' '}
-            <Text style={{ color: colors.primary, fontWeight: '700' }}>
-              {summary.departureLabel}
+          {!hasSlots ? (
+            <Text category="c1" style={[styles.error, { color: colors.danger }]}>
+              No hay horarios de salida válidos. La estación cierra a las{" "}
+              {scheduleContext.stationWindow.closeAt}.
             </Text>
-          </Text>
-          <Text category="c1" style={{ color: colors.textSecondary }}>
-            Conector libre desde: {summary.connectorFreeFromLabel}
-          </Text>
+          ) : null}
         </View>
-      ) : null}
 
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.swatch, { backgroundColor: colors.text }]} />
-          <Text category="c1" style={{ color: colors.textSecondary }}>
-            Disponible
-          </Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View
-            style={[styles.swatch, { backgroundColor: colors.textDisabled }]}
-          />
-          <Text category="c1" style={{ color: colors.textSecondary }}>
-            No disponible
-          </Text>
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.swatch, { backgroundColor: colors.text }]} />
+            <Text category="c1" style={{ color: colors.textSecondary }}>
+              Disponible
+            </Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View
+              style={[styles.swatch, { backgroundColor: colors.textDisabled }]}
+            />
+            <Text category="c1" style={{ color: colors.textSecondary }}>
+              No disponible
+            </Text>
+          </View>
         </View>
       </View>
     </View>
@@ -310,46 +368,112 @@ export function ConnectorEndTimeStep({
 
 const styles = StyleSheet.create({
   root: {
-    width: '100%',
-    gap: 16,
-    alignItems: 'center',
+    width: "100%",
+    flex: 1,
+    minHeight: 0,
+  },
+  hoursBandContainer: {
+    width: "100%",
+    flexGrow: 0,
+    flexShrink: 0,
+    overflow: "hidden",
+  },
+  hoursBandScroll: {
+    width: "100%",
+  },
+  pickerArea: {
+    flex: 1,
+    minHeight: 0,
+    width: "100%",
+    paddingTop: 12,
+    gap: 8,
+  },
+  pickerSlot: {
+    flex: 1,
+    minHeight: 0,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
   },
   loading: {
     paddingVertical: 24,
-    alignItems: 'center',
+    alignItems: "center",
     gap: 8,
   },
   loadingText: {
     marginTop: 8,
   },
   hoursBand: {
-    width: '100%',
+    width: "100%",
     padding: 14,
     borderRadius: 12,
-    gap: 4,
+    gap: 6,
+  },
+  stationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
   },
   bandTitle: {
-    fontWeight: '700',
+    fontWeight: "700",
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  stationName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  connectorType: {
+    fontWeight: "700",
     fontSize: 15,
+    lineHeight: 20,
+    flexShrink: 0,
+  },
+  scheduleLine: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  scheduleLabel: {
+    fontWeight: "500",
+  },
+  scheduleValue: {
+    fontWeight: "600",
+  },
+  scheduleHighlight: {
+    fontWeight: "700",
+  },
+  graceNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  graceNoticeIcon: {
+    marginTop: 1,
+  },
+  graceNoticeText: {
+    flex: 1,
+    lineHeight: 18,
   },
   limitHint: {
-    textAlign: 'center',
-    paddingHorizontal: 8,
-  },
-  summaryBlock: {
-    width: '100%',
-    gap: 4,
+    textAlign: "center",
     paddingHorizontal: 8,
   },
   legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 12,
+    flexShrink: 0,
+    paddingBottom: 4,
   },
   legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   swatch: {
@@ -358,7 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   error: {
-    textAlign: 'center',
+    textAlign: "center",
     paddingHorizontal: 8,
   },
 });

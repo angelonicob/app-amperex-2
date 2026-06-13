@@ -5,7 +5,7 @@ import type { PaymentSummary } from '../../../modules/session/pendingPayment';
 
 export interface SessionCompletionSummaryProps {
   summary: PaymentSummary;
-  /** Si false, oculta fila de total en CLP (estación privada). */
+  /** Si false, oculta fila de total en CLP (sin cobro). */
   showAmount?: boolean;
 }
 

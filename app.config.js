@@ -59,6 +59,16 @@ export default ({ config }) => {
     FIREBASE_AUTH_DOMAIN: envStr('FIREBASE_AUTH_DOMAIN'),
     FIREBASE_PROJECT_ID: envStr('FIREBASE_PROJECT_ID'),
     FIREBASE_APP_ID: envStr('FIREBASE_APP_ID'),
+    LEGAL_TERMS_URL: envStr(
+      'LEGAL_TERMS_URL',
+      'https://amperex.cl/terminos-y-condiciones/',
+    ),
+    LEGAL_PRIVACY_URL: envStr(
+      'LEGAL_PRIVACY_URL',
+      'https://amperex.cl/politica-de-privacidad/',
+    ),
+    LEGAL_TERMS_VERSION: envStr('LEGAL_TERMS_VERSION', '1.0'),
+    LEGAL_PRIVACY_VERSION: envStr('LEGAL_PRIVACY_VERSION', '1.0'),
   };
 
   return {

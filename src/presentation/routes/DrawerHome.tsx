@@ -251,9 +251,9 @@ export const DrawerHome = () => {
     }
   }, [oldestDebt?.sessionId]);
 
-  // Mientras no termine GET /session/active (o error controlado), no mostrar el drawer.
-  if (restoreState !== 'done') {
-    return <LoadingScreen />;
+  // Bloquear solo sin snapshot local; con cache CHARGING/STOPPING el drawer es usable al instante.
+  if (restoreState === 'loading') {
+    return <LoadingScreen message="Cargando..." />;
   }
 
   // Colores del header basados en el tema

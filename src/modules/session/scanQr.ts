@@ -124,7 +124,7 @@ export function formatScanQrFailure(
       title: 'Tiempo de tolerancia agotado',
       message:
         serverMsg ??
-        'Ya pasó el tiempo para conectar. Si tu franja sigue activa, contacta soporte.',
+        'Ya pasó el tiempo para conectar y tu reserva fue liberada.',
     };
   }
   if (code === 'RESERVATION_SLOT_ENDED') {

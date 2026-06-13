@@ -1,8 +1,9 @@
 import type { PropsWithChildren } from 'react';
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Layout, Text } from '@ui-kitten/components';
 import { useAppTheme } from '../../theme/useAppTheme';
+import { getPermissionFullScreenColors } from './permissionFullScreenTheme';
 
 /**
  * 2️⃣ Pantalla cuando el permiso está requestable (usuario negó una vez, aún se puede pedir).
@@ -17,6 +18,8 @@ export interface PermissionRequestProps {
   /** Opcional: botón secundario (ej. "Cerrar" o refrescar). */
   onClose?: () => void;
   buttonText?: string;
+  /** Pantalla completa con fondo oscuro (p. ej. cámara sin permiso). */
+  fullScreen?: boolean;
 }
 
 export function PermissionRequest({
@@ -26,8 +29,10 @@ export function PermissionRequest({
   onRequest,
   onClose,
   buttonText = 'Permitir',
+  fullScreen = false,
 }: PropsWithChildren<PermissionRequestProps>) {
   const colors = useAppTheme();
+  const fullScreenColors = getPermissionFullScreenColors(colors);
 
   const handleRequest = () => {
     const result = onRequest();
@@ -36,44 +41,89 @@ export function PermissionRequest({
     }
   };
 
+  const content = (
+    <>
+      {screenName != null && screenName !== '' && (
+        <Text
+          category="c1"
+          appearance="hint"
+          style={[styles.screenName, fullScreen && { color: fullScreenColors.hint }]}
+        >
+          {screenName}
+        </Text>
+      )}
+      <Text
+        category="h6"
+        style={[styles.title, fullScreen && { color: fullScreenColors.title }]}
+      >
+        {title}
+      </Text>
+      <Text
+        category="s1"
+        appearance="hint"
+        style={[styles.message, fullScreen && { color: fullScreenColors.hint }]}
+      >
+        {message}
+      </Text>
+
+      <Pressable
+        onPress={handleRequest}
+        style={({ pressed }) => [
+          styles.button,
+          { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+        ]}
+      >
+        <Text style={styles.buttonText}>{buttonText}</Text>
+      </Pressable>
+
+      {onClose != null && (
+        <Pressable onPress={onClose} style={styles.secondaryButton}>
+          <Text
+            category="s1"
+            appearance="hint"
+            style={fullScreen ? { color: fullScreenColors.hint } : undefined}
+          >
+            Cerrar
+          </Text>
+        </Pressable>
+      )}
+    </>
+  );
+
+  if (fullScreen) {
+    return (
+      <View
+        style={[
+          styles.fullScreenContainer,
+          { backgroundColor: fullScreenColors.background },
+        ]}
+      >
+        <View style={styles.fullScreenContent}>{content}</View>
+      </View>
+    );
+  }
+
   return (
     <Layout level="1" style={styles.container}>
       <Layout level="2" style={styles.card}>
-        {screenName != null && screenName !== '' && (
-          <Text category="c1" appearance="hint" style={styles.screenName}>
-            {screenName}
-          </Text>
-        )}
-        <Text category="h6" style={styles.title}>
-          {title}
-        </Text>
-        <Text category="s1" appearance="hint" style={styles.message}>
-          {message}
-        </Text>
-
-        <Pressable
-          onPress={handleRequest}
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
-          ]}
-        >
-          <Text style={styles.buttonText}>{buttonText}</Text>
-        </Pressable>
-
-        {onClose != null && (
-          <Pressable onPress={onClose} style={styles.secondaryButton}>
-            <Text category="s1" appearance="hint">
-              Cerrar
-            </Text>
-          </Pressable>
-        )}
+        {content}
       </Layout>
     </Layout>
   );
 }
 
 const styles = StyleSheet.create({
+  fullScreenContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  fullScreenContent: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   card: {
     width: '100%',

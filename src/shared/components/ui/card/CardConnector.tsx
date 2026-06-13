@@ -11,10 +11,17 @@ export interface CardConnectorProps {
   connector: Connector;
   chargePoint: ChargePoint;
   onReserve: () => void;
+  onPreparingSessionPress?: () => void;
   style?: ViewStyle;
 }
 
-export const CardConnector = ({ connector, chargePoint, onReserve, style }: CardConnectorProps) => {
+export const CardConnector = ({
+  connector,
+  chargePoint,
+  onReserve,
+  onPreparingSessionPress,
+  style,
+}: CardConnectorProps) => {
   const colors = useAppTheme();
 
   // Inactivo: el conector no puede operar por configuración o por desconexión.
@@ -24,9 +31,13 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
     chargePoint.connectionState === 'OFFLINE' ||
     chargePoint.operativeStatus !== 'ACTIVE' ||
     connector.operativeStatus !== 'ACTIVE';
+  const isPreparingSession =
+    !isInactive && connector.sessionPreparing === true;
   const isOccupied =
-    !isInactive && connector.status === ConnectorStatus.Occupied;
-  const isUnavailable = isInactive || isOccupied;
+    !isInactive &&
+    !isPreparingSession &&
+    connector.status === ConnectorStatus.Occupied;
+  const isUnavailable = isInactive || isOccupied || isPreparingSession;
 
   const cardBg = isUnavailable ? colors.backgroundTertiary : colors.background;
   const borderColor = isUnavailable ? colors.border : colors.primary;
@@ -42,13 +53,25 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
   const powerText =
     connector.powerKw != null && connector.powerKw !== '' ? `${connector.powerKw} kW` : null;
 
-  const statusLabel = isInactive ? 'Inactivo' : isOccupied ? 'Ocupado' : null;
+  const statusLabel = isInactive
+    ? 'Inactivo'
+    : isPreparingSession
+      ? 'Preparando sesión'
+      : isOccupied
+        ? 'Ocupado'
+        : null;
+
+  const reserveDisabled = isInactive || isPreparingSession;
 
   const handleReservePress = useCallback(() => {
     if (isInactive) return;
+    if (isPreparingSession) {
+      onPreparingSessionPress?.();
+      return;
+    }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onReserve();
-  }, [isInactive, onReserve]);
+  }, [isInactive, isPreparingSession, onPreparingSessionPress, onReserve]);
 
   return (
     <View style={[styles.card, { backgroundColor: cardBg, borderColor }, style]}>
@@ -85,23 +108,23 @@ export const CardConnector = ({ connector, chargePoint, onReserve, style }: Card
       </View>
       <Pressable
         onPress={handleReservePress}
-        disabled={isInactive}
+        disabled={reserveDisabled}
         style={({ pressed }) => [
           styles.reserveButton,
           {
-            backgroundColor: isInactive
+            backgroundColor: reserveDisabled
               ? colors.textDisabled
               : pressed
                 ? colors.primaryDark
                 : colors.primary,
-            opacity: isInactive ? 0.6 : 1,
+            opacity: reserveDisabled ? 0.6 : 1,
           },
         ]}
         android_ripple={
-          isInactive ? undefined : { color: 'rgba(255,255,255,0.2)' }
+          reserveDisabled ? undefined : { color: 'rgba(255,255,255,0.2)' }
         }
         accessibilityRole="button"
-        accessibilityState={{ disabled: isInactive }}
+        accessibilityState={{ disabled: reserveDisabled }}
       >
         <Text style={[styles.reserveButtonText, { color: colors.background }]}>Reservar</Text>
       </Pressable>

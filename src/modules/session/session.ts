@@ -141,16 +141,24 @@ export const getPlugStatus = async (
   correlationId: string,
 ): Promise<PlugStatusResponse | null> => {
   try {
-    const { data } = await api.get<PlugStatusResponse>(
+    const { data, status } = await api.get<PlugStatusResponse>(
       `session/plug-status/${correlationId}`,
+      { validateStatus: (s) => s === 200 || s === 404 },
     );
+    if (status === 404) return null;
     return data;
-  } catch (error: any) {
-    console.error('Error getting plug status:', {
-      message: error?.message,
-      status: error?.response?.status,
-      data: error?.response?.data,
-    });
+  } catch (error: unknown) {
+    if (__DEV__) {
+      const err = error as {
+        message?: string;
+        response?: { status?: number; data?: unknown };
+      };
+      console.error('Error getting plug status:', {
+        message: err?.message,
+        status: err?.response?.status,
+        data: err?.response?.data,
+      });
+    }
     return null;
   }
 };
@@ -287,6 +295,15 @@ export interface ActiveSession {
   agendaBlockUntil?: string | null;
   station?: { id: string; name: string };
   chargePoint?: { id: string; ocppId: string };
+  /** Snapshot de telemetría (GET /session/active). */
+  energyKwh?: number;
+  currentCost?: number;
+  currentPercentage?: number;
+  pricePerKwh?: number;
+  currency?: string;
+  mode?: 'TARGET' | 'FULL' | 'AMOUNT';
+  targetEnergyKwh?: number;
+  meterStart?: number;
 }
 
 export interface ActiveSessionResponse {

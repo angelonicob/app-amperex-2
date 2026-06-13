@@ -26,6 +26,12 @@ import {
 import { useAppTheme } from '../../../shared/theme/useAppTheme';
 import { useInfoDialog } from '../../../shared/hooks/useInfoDialog';
 import { runOneClickInscriptionFlow } from '../../../shared/utils/oneclickInscription';
+import {
+  INSCRIPTION_CANCELLED_MESSAGE,
+  INSCRIPTION_CONFIRM,
+  INSCRIPTION_UNKNOWN_MESSAGE,
+  messageForInscriptionStartError,
+} from '../../../shared/utils/paymentErrors';
 
 export const TarjetasScreen = () => {
   const colors = useAppTheme();
@@ -38,6 +44,8 @@ export const TarjetasScreen = () => {
 
   const [deleteTarget, setDeleteTarget] = useState<OneClickCard | null>(null);
   const [editTarget, setEditTarget] = useState<OneClickCard | null>(null);
+  const [inscriptionConfirmVisible, setInscriptionConfirmVisible] =
+    useState(false);
   const [editName, setEditName] = useState('');
   const { showInfo, InfoDialog } = useInfoDialog();
 
@@ -100,27 +108,23 @@ export const TarjetasScreen = () => {
           return;
         }
         case 'cancelled':
-          // El usuario cerró el navegador. No mostramos alerta intrusiva.
+          showInfo(
+            INSCRIPTION_CANCELLED_MESSAGE.title,
+            INSCRIPTION_CANCELLED_MESSAGE.body,
+          );
           return;
         case 'unknown':
         default:
           showInfo(
-            'Error',
-            'No se pudo confirmar el resultado de la inscripción. Verifica si tu tarjeta quedó registrada y, si no, inténtalo nuevamente.',
+            INSCRIPTION_UNKNOWN_MESSAGE.title,
+            INSCRIPTION_UNKNOWN_MESSAGE.body,
           );
           await refreshCards();
           return;
       }
     } catch (err: unknown) {
-      const message =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { message?: string } } }).response?.data
-              ?.message
-          : null;
-      showInfo(
-        'Error',
-        message ?? 'No se pudo iniciar la inscripción. Intenta de nuevo.',
-      );
+      const msg = messageForInscriptionStartError(err);
+      showInfo(msg.title, msg.body);
     } finally {
       setIsProcessing(false);
     }
@@ -154,6 +158,20 @@ export const TarjetasScreen = () => {
   return (
     <Fragment>
       <Layout style={globalStyles.container}>
+        <ConfirmPopup
+          visible={inscriptionConfirmVisible}
+          onRequestClose={() => setInscriptionConfirmVisible(false)}
+          title={INSCRIPTION_CONFIRM.title}
+          labelConfirm={INSCRIPTION_CONFIRM.labelConfirm}
+          loading={isProcessing}
+          onConfirm={() => {
+            setInscriptionConfirmVisible(false);
+            void handleStartInscription();
+          }}
+        >
+          <Text appearance="hint">{INSCRIPTION_CONFIRM.body}</Text>
+        </ConfirmPopup>
+
         <ConfirmPopup
           visible={deleteTarget != null}
           onRequestClose={() => setDeleteTarget(null)}
@@ -338,7 +356,7 @@ export const TarjetasScreen = () => {
         >
           <ButtonPrimary
             title={isProcessing ? 'Abriendo...' : 'Añadir tarjeta'}
-            onPress={handleStartInscription}
+            onPress={() => setInscriptionConfirmVisible(true)}
             disabled={isProcessing}
             style={styles.addButton}
           />

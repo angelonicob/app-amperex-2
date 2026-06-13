@@ -230,7 +230,7 @@ export function getEndTimeBounds(
     minMinutes24 = Math.max(minMinutes24, stationWindow.openMinutes24);
   }
 
-  let maxMinutes24 = stationWindow.closeMinutes24;
+  let maxMinutes24 = stationWindow.closeMinutes24 - graceMinutes;
 
   const programmedEnd = ctx.programmedReservation?.endAtLocal
     ? parseIsoLocalToMinutes24(ctx.programmedReservation.endAtLocal)
@@ -409,19 +409,12 @@ export function formatEndTimeRangeLabel(bounds: DepartureTimeBounds): string {
   return `${formatMinutes24AsHhMm(bounds.minMinutes24)} – ${formatMinutes24AsHhMm(bounds.maxMinutes24)}`;
 }
 
-export function formatEndTimeSummary(
-  value: TimePickerColumnsValue,
-  ctx: EndTimeScheduleContext,
-): { departureLabel: string; connectorFreeFromLabel: string } {
-  const minutes24 = timePickerValueToMinutes24(value);
-  const freeFromMinutes = Math.min(
-    23 * 60 + 59,
-    minutes24 + ctx.graceMinutes,
-  );
-  return {
-    departureLabel: formatTimePickerValue(value),
-    connectorFreeFromLabel: formatMinutes24AsHhMm(freeFromMinutes),
-  };
+/** Última hora de salida permitida (cierre o próxima reserva, menos margen de gracia). */
+export function formatEndTimeMaxAvailableLabel(bounds: DepartureTimeBounds): string {
+  if (!hasSelectableDepartureSlot(bounds)) {
+    return 'Sin horarios disponibles por hoy';
+  }
+  return formatMinutes24AsHhMm(bounds.maxMinutes24);
 }
 
 export function formatLimitHintMessage(

@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import axios from 'axios';
 import { loadMe, updateMe } from '../../user/user';
+import { recordLegalAcceptance } from '../../user/legalAcceptance';
 import { AuthStatus, ApiStatus } from '../auth.status';
 import { useStationStore } from '../../station/store/useStationStore';
 import { useAccountStore } from '../../user/store/useAccountStore';
 import { useUserStore } from '../../user/store/useUserStore';
+import { resetSessionHydrationFlag } from '../../session/sessionBootstrap';
 import { useActiveSessionStore } from '../../session/store/useActiveSessionStore';
 import { registerPushTokenIfGranted, resetPushRegistrationState } from '../../notifications/push';
 import { useNotificationsStore } from '../../notifications/store/useNotificationsStore';
@@ -104,7 +106,12 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     /** Tras alta en Firebase: persiste nombre/apellido en Postgres antes de loadMe. */
     registerProfile?: { firstName: string; lastName: string };
   }): Promise<
-    'success' | 'transport' | 'server' | 'auth' | 'no_token'
+    | 'success'
+    | 'transport'
+    | 'server'
+    | 'auth'
+    | 'no_token'
+    | 'legal_acceptance_failed'
   > => {
     if (opts?.showChecking !== false) {
       set({ isAuthenticated: 'checking', apiStatus: 'unknown' });
@@ -148,6 +155,22 @@ export const useAuthStore = create<AuthState>()((set, get) => {
       const updated = await updateMe(undefined, firstName, lastName);
       if (!updated && __DEV__) {
         console.warn('[auth] PATCH user/me on register failed');
+      }
+
+      const legal = await recordLegalAcceptance();
+      if (!legal.ok) {
+        try {
+          await signOut(getFirebaseAuth());
+        } catch {
+          // best effort
+        }
+        resetBackendSessionSyncThrottle();
+        useUserStore.getState().clearUser();
+        set({
+          isAuthenticated: 'unauthenticated',
+          apiStatus: 'unknown',
+        });
+        return 'legal_acceptance_failed';
       }
     }
 
@@ -236,6 +259,13 @@ export const useAuthStore = create<AuthState>()((set, get) => {
             : {}),
         });
 
+        if (outcome === 'legal_acceptance_failed') {
+          return {
+            ok: false,
+            errorMessage:
+              'No se pudo registrar la aceptación de términos. Inicia sesión e inténtalo de nuevo.',
+          };
+        }
         if (outcome === 'auth' || outcome === 'no_token') {
           return {
             ok: false,
@@ -334,6 +364,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
     },
 
     logout() {
+      resetSessionHydrationFlag();
       resetBackendSessionSyncThrottle();
       resetPushRegistrationState();
       void (async () => {
